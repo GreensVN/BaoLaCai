@@ -549,7 +549,12 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
 .news-card[data-game="general"]{border-top:2px solid var(--general);}
 
 .card-img-wrap{position:relative;overflow:hidden;height:172px;background:var(--surface2);}
-.card-img{width:100%;height:100%;object-fit:cover;transition:transform .55s ease;}
+.card-img{width:100%;height:100%;object-fit:cover;transition:transform .55s ease;background:var(--surface3);}
+/* FIX: Khi ảnh bị lỗi, img element không bị đen - hiện màu nền game thay thế */
+.card-img[src=""],
+.card-img:not([src]),
+.card-img[src="null"],
+.card-img[src="undefined"]{display:none;}
 .news-card.card-visible:hover .card-img{transform:scale(1.08);}
 .card-img-overlay{position:absolute;inset:0;background:linear-gradient(transparent 40%,rgba(9,11,18,.7) 100%);pointer-events:none;}
 .card-game-badge{position:absolute;top:8px;left:8px;font-family:var(--font-head);font-size:9px;font-weight:700;padding:2px 10px;letter-spacing:1px;border:1px solid;backdrop-filter:blur(8px);background:rgba(0,0,0,.65);z-index:2;}
@@ -1265,7 +1270,7 @@ const PROXIES = [
   { url: 'https://api.codetabs.com/v1/proxy?quest=',  type: 'raw' },
 ];
 const RSS_BASE   = 'https://news.google.com/rss/search?q=';
-const RSS_PARAMS = '&hl=en&gl=US&ceid=US:en&num=10';
+const RSS_PARAMS = '&hl=en&gl=US&ceid=US:en&num=20';
 const AUTO_REFRESH_SEC = 600;
 const MAX_ARTICLES = 400;
 const PAGE_SIZE = 9;
@@ -1485,12 +1490,12 @@ function extractImgFromItem(xmlItem, descRaw) {
   const mc = xmlItem.getElementsByTagNameNS('http://search.yahoo.com/mrss/','content')[0]
            || xmlItem.getElementsByTagName('media:content')[0]
            || xmlItem.querySelector('content[url]');
-  if (mc) { const u=mc.getAttribute('url'); if (u?.startsWith('http')) return u; }
+  if (mc) { const u=mc.getAttribute('url'); if (isValidImgUrl(u)) return u; }
 
   // 2. media:thumbnail url=
   const mt = xmlItem.getElementsByTagNameNS('http://search.yahoo.com/mrss/','thumbnail')[0]
            || xmlItem.getElementsByTagName('media:thumbnail')[0];
-  if (mt) { const u=mt.getAttribute('url'); if (u?.startsWith('http')) return u; }
+  if (mt) { const u=mt.getAttribute('url'); if (isValidImgUrl(u)) return u; }
 
   // 3. enclosure (podcasts / image attachments)
   const enc = xmlItem.querySelector('enclosure');
@@ -1501,13 +1506,22 @@ function extractImgFromItem(xmlItem, descRaw) {
 
   // 4. <img src="..."> inside description HTML
   const imgM=descRaw.match(/<img[^>]+src=["'](https:\/\/[^"']+?)["']/i);
-  if (imgM) return imgM[1];
+  if (imgM && isValidImgUrl(imgM[1])) return imgM[1];
 
   // 5. Bare https URL ending in image extension (sometimes in description text)
   const extM=descRaw.match(/https:\/\/[^\s"'<>\]]+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^\s"'<>]*)?/i);
-  if (extM) return extM[0];
+  if (extM && isValidImgUrl(extM[0])) return extM[0];
 
   return null;
+}
+// Kiểm tra URL ảnh có hợp lệ không (loại bỏ Google News attachment URL hay URL không phải ảnh)
+function isValidImgUrl(url) {
+  if (!url || !url.startsWith('http')) return false;
+  // Loại bỏ Google News internal redirect URLs - chúng thường không load được cross-origin
+  if (/news\.google\.com\/(api\/attachments|rss\/)/.test(url)) return false;
+  // Loại bỏ feed-image wrappers
+  if (/feed-image\.|feedburner\.com\/~/.test(url)) return false;
+  return true;
 }
 // Legacy alias kept for safety
 function extractImg(htmlStr) {
@@ -2121,7 +2135,7 @@ async function fetchRSS(query){
         if(xml.querySelector('parsererror'))throw new Error('XML parse error');
         const items=[...xml.querySelectorAll('item')];
         if(!items.length)throw new Error('No items');
-        const result=items.slice(0,10).map(item=>{
+        const result=items.slice(0,20).map(item=>{
           const descRaw=item.querySelector('description')?.textContent||'';
           return{
             title:stripHtml(item.querySelector('title')?.textContent||''),
@@ -2168,7 +2182,7 @@ async function fetchDirectFeed(feedUrl, sourceName){
         if(xml.querySelector('parsererror'))throw new Error('Parse error');
         const items=[...xml.querySelectorAll('item, entry')];
         if(!items.length)throw new Error('No items');
-        const result=items.slice(0,8).map(item=>{
+        const result=items.slice(0,15).map(item=>{
           const descRaw=item.querySelector('description,summary,content')?.textContent||'';
           const title=stripHtml(item.querySelector('title')?.textContent||'');
           const descText=stripHtml(descRaw);
@@ -2320,7 +2334,7 @@ function renderHero(){
        tabindex="0" role="article" data-action="open-article" data-article-id="${main.id}">
       <div class="hero-live-tag"><span class="live-dot"></span>LIVE</div>
       <img class="hero-main-img" src="${escHtml(main.img)}" alt="${escHtml(main.titleVN)}" loading="lazy"
-           onerror="this.src='${escHtml(main.imgFallback)}'"/>
+           onerror="this.onerror=null;this.src='${escHtml(main.imgFallback)}'"/>
       <div class="hero-main-overlay">
         <div class="hero-game-badge game-${main.game}">${main.gameIcon} ${escHtml(main.gameLabel)}</div>
         <h2 class="hero-main-title">${escHtml(main.titleVN)}</h2>
@@ -2338,7 +2352,7 @@ function renderHero(){
         <a class="hero-sub-card" href="${escHtml(a.sourceLink||'#')}" target="_blank" rel="noopener noreferrer"
            tabindex="0" role="article" data-action="open-article" data-article-id="${a.id}">
           <img class="hero-sub-img" src="${escHtml(a.img)}" alt="${escHtml(a.titleVN)}" loading="lazy"
-               onerror="this.src='${escHtml(a.imgFallback)}'"/>
+               onerror="this.onerror=null;this.src='${escHtml(a.imgFallback)}'"/>
           <div class="hero-sub-body">
             <span class="hero-sub-badge game-${a.game}">${a.gameIcon} ${escHtml(a.gameLabel)}</span>
             <div class="hero-sub-title">${escHtml(a.titleVN)}</div>
@@ -2401,10 +2415,11 @@ function buildCard(art,isWide=false){
   if(art.sourceLink){card.href=art.sourceLink;card.target='_blank';card.rel='noopener noreferrer';}
   if(readSet.has(art.id))card.classList.add('is-read');
   const BADGE_LABEL={patch:'PATCH',update:'UPDATE',hot:'HOT',new:'NEW',esport:'ESPORT',mobile:'MOBILE'};
+  // Đảm bảo src hợp lệ (không để "null" string)
+  const imgSrc = (art.img && art.img!=='null' && art.img!=='undefined') ? art.img : art.imgFallback;
   card.innerHTML=`
     <div class="card-img-wrap">
-      <img class="card-img" src="${escHtml(art.img)}" alt="${escHtml(art.titleVN)}" loading="lazy"
-           onerror="this.src='${escHtml(art.imgFallback)}'"/>
+      <img class="card-img" src="${escHtml(imgSrc)}" alt="${escHtml(art.titleVN)}" loading="lazy"/>
       <div class="card-img-overlay"></div>
       <div class="card-game-badge game-${art.game}">${art.gameIcon} ${escHtml(art.gameLabel)}</div>
       <div class="card-type-badge badge-${art.badge}">${BADGE_LABEL[art.badge]||'NEW'}</div>
@@ -2421,6 +2436,21 @@ function buildCard(art,isWide=false){
                 data-bm="${art.id}" title="Lưu bài" aria-label="Lưu bài">🔖</button>
       </div>
     </div>`;
+  // FIX: Dùng addEventListener thay onerror inline để tránh escHtml phá vỡ data URI
+  const imgEl=card.querySelector('.card-img');
+  if(imgEl){
+    let errored=false;
+    imgEl.addEventListener('error',function(){
+      if(errored)return; // tránh vòng lặp vô tận
+      errored=true;
+      this.onerror=null;
+      this.src=art.imgFallback;
+    },{once:true});
+    // FIX: Kiểm tra nếu img đã load fail trước khi listener được gắn (cached fail)
+    if(imgEl.complete&&imgEl.naturalWidth===0&&imgEl.src&&!imgEl.src.startsWith('data:')){
+      imgEl.src=art.imgFallback;
+    }
+  }
   card.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.target.closest('.card-bm-btn')){e.preventDefault();openArticle(art.id);}});
   attachCardGlow(card);
   return card;
@@ -2429,16 +2459,28 @@ function buildCard(art,isWide=false){
 // ===== CARD OBSERVER =====
 function initCardObserver(){
   if(cardObserver)cardObserver.disconnect();
+  const cards=[...document.querySelectorAll('.news-card:not(.card-visible)')];
+  if(!cards.length)return;
+
+  // Nếu số bài ít (tab riêng lẻ như Minecraft, Anime...) → show ngay, không chờ scroll
+  if(cards.length<=PAGE_SIZE*2){
+    cards.forEach((c,i)=>setTimeout(()=>c.classList.add('card-visible'),i*30));
+    return;
+  }
+
+  // Bài nhiều → dùng IntersectionObserver, stagger nhỏ hơn (25ms thay vì 55ms)
+  let visibleIdx=0;
   cardObserver=new IntersectionObserver(entries=>{
     entries.forEach(entry=>{
       if(!entry.isIntersecting)return;
       const card=entry.target;
-      const idx=[...document.querySelectorAll('.news-card:not(.card-visible)')].indexOf(card);
-      setTimeout(()=>card.classList.add('card-visible'),Math.min(idx,6)*55);
+      const delay=Math.min(visibleIdx,8)*25; // max 200ms thay vì 330ms
+      visibleIdx++;
+      setTimeout(()=>card.classList.add('card-visible'),delay);
       cardObserver.unobserve(card);
     });
   },{threshold:0.04});
-  document.querySelectorAll('.news-card:not(.card-visible)').forEach(c=>cardObserver.observe(c));
+  cards.forEach(c=>cardObserver.observe(c));
 }
 
 function loadMore(){
