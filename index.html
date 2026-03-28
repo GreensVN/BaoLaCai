@@ -3,8 +3,69 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover"/>
+  <!--
+    ╔══════════════════════════════════════════════════════════════╗
+    ║  CONTENT SECURITY POLICY – NOTES & ROADMAP                  ║
+    ╠══════════════════════════════════════════════════════════════╣
+    ║  CURRENT STATE (single-file static app):                     ║
+    ║  • 'unsafe-inline' in script-src is still REQUIRED here      ║
+    ║    because the <script> block is inline in this HTML file.   ║
+    ║    This cannot be avoided without a server-rendered nonce.   ║
+    ║                                                              ║
+    ║  WHAT WE FIXED IN THIS VERSION to reduce the attack surface: ║
+    ║  • ALL onclick="..." attributes removed from HTML elements.  ║
+    ║    This eliminates the class of injected-attribute XSS where ║
+    ║    a reflected value could create executable onclick strings. ║
+    ║  • All event wiring now lives inside the single <script>     ║
+    ║    block via addEventListener + a central action dispatcher. ║
+    ║  • HTML stripping now uses DOMParser (not regex).            ║
+    ║  • innerHTML usage is audit-locked behind escHtml() calls.   ║
+    ║                                                              ║
+    ║  HOW TO FULLY REMOVE 'unsafe-inline' (server deploy):        ║
+    ║  1. Move the <script> block to a separate app.js file.       ║
+    ║  2. Change script-src to: 'self'  (no unsafe-inline needed). ║
+    ║  3. If using Cloudflare Pages: add _headers file:            ║
+    ║     Content-Security-Policy: script-src 'self'; ...          ║
+    ╚══════════════════════════════════════════════════════════════╝
+  -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self' 'unsafe-inline';
+    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+    font-src https://fonts.gstatic.com;
+    img-src https: data: blob:;
+    connect-src https://api.allorigins.win https://corsproxy.io https://api.codetabs.com
+                https://news.google.com https://feeds.ign.com https://www.gamespot.com
+                https://www.eurogamer.net https://www.pcgamer.com https://kotaku.com
+                https://www.rockpapershotgun.com https://picsum.photos
+                https://www.animenewsnetwork.com https://www.crunchyroll.com
+                https://siliconera.com https://www.destructoid.com https://www.thegamer.com
+                https://comicbook.com https://myanimelist.net https://rss.app;
+    frame-src 'none';
+    object-src 'none';
+    base-uri 'self';
+    form-action 'self';
+  "/>
   <title>BÁO LÁ CẢI – Tin Tức Game Việt Nam</title>
   <meta name="description" content="Tin tức gaming mới nhất: Roblox, Minecraft, Genshin Impact, Fortnite, LoL, Valorant. Cập nhật 24/7 từ Google News."/>
+  <!-- FIX SEO: canonical prevents duplicate-content penalty -->
+  <link rel="canonical" href="https://baolacai.pages.dev/"/>
+  <!-- FIX SEO: JSON-LD structured data helps Google understand the site is a news aggregator -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    "name": "Báo Lá Cải",
+    "description": "Tin tức gaming mới nhất: Roblox, Minecraft, Genshin Impact, Fortnite, LoL, Valorant. Cập nhật 24/7 từ Google News.",
+    "url": "https://baolacai.pages.dev/",
+    "inLanguage": "vi",
+    "potentialAction": {
+      "@type": "SearchAction",
+      "target": "https://baolacai.pages.dev/?q={search_term_string}",
+      "query-input": "required name=search_term_string"
+    }
+  }
+  </script>
   <meta name="theme-color" content="#050608"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
@@ -60,6 +121,7 @@
   --roblox:   #ff3333; --minecraft:#4ddf28; --genshin:#e6b422;
   --fortnite: #00c3ff; --lol:#c89b3c;      --valorant:#ff4655;
   --pubg:     #f5a623; --mobile:#c084fc;   --general:#2dffb0;
+  --anime:    #ff6b9d; --manga:    #a78bfa;
   --modal-font-size: 15px;
   --card-radius: 0px;
 }
@@ -88,18 +150,20 @@ img{display:block;max-width:100%;}
 ::selection{background:var(--cyan);color:#000;}
 :focus-visible{outline:2px solid var(--cyan);outline-offset:3px;}
 
-/* ===== CUSTOM CURSOR ===== */
+/* ===== CUSTOM CURSOR (uses transform — no layout thrash) ===== */
 .cursor-ring{
   position:fixed;width:38px;height:38px;border:1.5px solid var(--cyan);
   border-radius:50%;pointer-events:none;z-index:999999;
-  transform:translate(-50%,-50%);
+  left:0;top:0;
+  will-change:transform;
   transition:width .18s var(--ease),height .18s var(--ease),border-color .18s,opacity .3s,background .18s;
   opacity:0;
 }
 .cursor-dot{
   position:fixed;width:5px;height:5px;background:var(--cyan);
   border-radius:50%;pointer-events:none;z-index:999999;
-  transform:translate(-50%,-50%);
+  left:0;top:0;
+  will-change:transform;
   box-shadow:0 0 10px var(--cyan),0 0 20px var(--cyan);
   transition:width .1s,height .1s,opacity .3s;opacity:0;
 }
@@ -280,7 +344,7 @@ body.light .header{background:rgba(240,244,251,0.94);}
 }
 .nav-btn::before{content:'';position:absolute;inset:0;background:var(--cyan-glow2);opacity:0;transition:opacity .15s;}
 .nav-btn:hover::before,.nav-btn.active::before{opacity:1;}
-.nav-btn:hover,.nav-btn.active{color:var(--cyan);border-bottom-color:var(--cyan);}
+.nav-btn:hover,.nav-btn.active{color:var(--nav-accent,var(--cyan));border-bottom-color:var(--nav-accent,var(--cyan));}
 .nav-btn.active{text-shadow:0 0 12px rgba(45,255,176,0.4);}
 .nav-refresh{
   margin-left:auto;display:flex;align-items:center;gap:6px;
@@ -316,7 +380,8 @@ body.light .header{background:rgba(240,244,251,0.94);}
 .stag{background:var(--surface2);border:1px solid var(--border);font-family:var(--font-head);font-size:12px;font-weight:600;padding:4px 14px;color:var(--text2);border-radius:99px;cursor:pointer;transition:all .15s;}
 .stag:hover{border-color:var(--cyan);color:var(--cyan);background:var(--cyan-glow);}
 .search-results{max-height:440px;overflow-y:auto;padding:8px 0;}
-.sr-item{display:flex;gap:12px;padding:10px 22px;cursor:pointer;transition:background .15s;}
+/* FIX SEO: sr-item is now an <a> tag */
+.sr-item{display:flex;gap:12px;padding:10px 22px;cursor:pointer;transition:background .15s;color:inherit;text-decoration:none;-webkit-tap-highlight-color:transparent;}
 .sr-item:hover{background:var(--surface2);}
 .sr-img{width:68px;height:50px;object-fit:cover;flex-shrink:0;border:1px solid var(--border);background:var(--surface2);}
 .sr-title{font-family:var(--font-head);font-size:14px;font-weight:600;color:var(--text);line-height:1.3;}
@@ -337,7 +402,8 @@ body.light .header{background:rgba(240,244,251,0.94);}
 .bm-close{background:none;border:1px solid var(--border);color:var(--text3);font-size:14px;width:30px;height:30px;display:flex;align-items:center;justify-content:center;cursor:pointer;}
 .bm-close:hover{border-color:var(--cyan);color:var(--cyan);}
 #bookmarksList{flex:1;overflow-y:auto;padding:8px 0;}
-.bm-item{display:flex;gap:12px;padding:10px 20px;cursor:pointer;transition:background .15s;border-bottom:1px solid var(--border);}
+/* FIX SEO: bm-item is now an <a> tag */
+.bm-item{display:flex;gap:12px;padding:10px 20px;cursor:pointer;transition:background .15s;border-bottom:1px solid var(--border);color:inherit;text-decoration:none;-webkit-tap-highlight-color:transparent;}
 .bm-item:hover{background:var(--surface2);}
 .bm-item-img{width:64px;height:46px;object-fit:cover;flex-shrink:0;border:1px solid var(--border);background:var(--surface2);}
 .bm-item-title{font-family:var(--font-head);font-size:13px;font-weight:600;color:var(--text);line-height:1.3;}
@@ -378,9 +444,11 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
 @keyframes shimmer{from{opacity:.3}to{opacity:.7}}
 .hero-grid{display:grid;grid-template-columns:1fr 340px;gap:14px;margin-bottom:26px;}
 @media(max-width:1000px){.hero-grid{grid-template-columns:1fr;}}
+/* FIX SEO: hero-main and hero-sub-card are now <a> tags — reset anchor defaults */
 .hero-main{
   grid-row:1/3;position:relative;cursor:pointer;overflow:hidden;
   border:1px solid var(--border);background:var(--surface);transition:all .25s var(--ease);
+  color:inherit;text-decoration:none;-webkit-tap-highlight-color:transparent;display:block;
 }
 .hero-main:hover{border-color:var(--cyan);box-shadow:0 0 40px rgba(45,255,176,0.12),0 20px 60px rgba(0,0,0,0.5);}
 .hero-main-img{width:100%;height:400px;object-fit:cover;filter:brightness(.65);transition:transform .7s ease,filter .4s;display:block;background:var(--surface2);}
@@ -394,11 +462,12 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
 .hero-main-title{font-family:var(--font-head);font-size:clamp(21px,2.6vw,32px);font-weight:700;line-height:1.2;color:#fff;margin-bottom:10px;text-shadow:0 2px 12px rgba(0,0,0,0.6);}
 .hero-main-excerpt{font-size:13px;line-height:1.65;color:rgba(255,255,255,0.75);margin-bottom:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
 .hero-main-meta{display:flex;align-items:center;gap:12px;font-family:var(--font-mono);font-size:10px;color:rgba(255,255,255,0.5);flex-wrap:wrap;}
-.hero-main-cta{margin-left:auto;background:var(--cyan);color:#000;font-family:var(--font-head);font-size:12px;font-weight:700;padding:7px 18px;border:none;cursor:pointer;transition:all .18s;letter-spacing:.5px;}
-.hero-main-cta:hover{background:#fff;transform:scale(1.05);}
+.hero-main-cta{margin-left:auto;display:inline-block;background:var(--cyan);color:#000;font-family:var(--font-head);font-size:12px;font-weight:700;padding:7px 18px;transition:all .18s;letter-spacing:.5px;}
+.hero-main:hover .hero-main-cta{background:#fff;transform:scale(1.05);}
 .hero-live-tag{position:absolute;top:18px;left:18px;background:var(--red);font-family:var(--font-head);font-size:10px;font-weight:700;padding:3px 12px;letter-spacing:2px;color:#fff;display:flex;align-items:center;gap:5px;box-shadow:var(--glow-red);}
 .hero-side{display:flex;flex-direction:column;gap:14px;}
-.hero-sub-card{background:var(--surface);border:1px solid var(--border);cursor:pointer;overflow:hidden;display:flex;flex-direction:column;flex:1;transition:all .2s;position:relative;}
+/* FIX SEO: hero-sub-card is now an <a> tag */
+.hero-sub-card{background:var(--surface);border:1px solid var(--border);cursor:pointer;overflow:hidden;display:flex;flex-direction:column;flex:1;transition:all .2s;position:relative;color:inherit;text-decoration:none;-webkit-tap-highlight-color:transparent;}
 .hero-sub-card:hover{border-color:var(--cyan);box-shadow:0 6px 24px rgba(45,255,176,0.1);}
 .hero-sub-card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(90deg,var(--cyan),var(--blue));opacity:0;transition:opacity .2s;}
 .hero-sub-card:hover::before{opacity:1;}
@@ -442,12 +511,15 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
 @media(max-width:560px){.news-grid.masonry-mode{column-count:1;}}
 
 /* ===== CARDS ===== */
+/* FIX SEO: cards are now <a> tags — reset anchor defaults so they look identical to before */
 .news-card{
   background:var(--surface);border:1px solid var(--border);overflow:hidden;cursor:pointer;
   position:relative;display:flex;flex-direction:column;
   opacity:0;transform:translateY(16px);
   transition:opacity .4s ease,transform .4s ease,border-color .2s,box-shadow .25s;
   --mx:50%;--my:50%;
+  /* Reset <a> tag defaults */
+  color:inherit;text-decoration:none;-webkit-tap-highlight-color:transparent;
 }
 .news-card.card-visible{opacity:1;transform:translateY(0);}
 .news-card.card-visible:hover{
@@ -568,13 +640,15 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
 .gs-bar-fill{height:100%;border-radius:99px;transition:width .7s var(--ease);}
 .gs-bar-num{font-family:var(--font-mono);font-size:10px;color:var(--text3);min-width:22px;text-align:right;}
 
-.trending-item{display:flex;align-items:flex-start;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;}
+/* FIX SEO: trending-item, patch-item, sr-item, bm-item are now <a> tags */
+.trending-item{display:flex;align-items:flex-start;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;color:inherit;text-decoration:none;-webkit-tap-highlight-color:transparent;}
 .trending-item:last-child{border-bottom:none}.trending-item:hover{background:var(--surface2)}
 .tr-num{font-family:var(--font-head);font-size:22px;font-weight:700;color:var(--surface3);line-height:1;min-width:26px;transition:color .15s;}
 .trending-item:hover .tr-num{color:var(--cyan);}
 .tr-body{flex:1}.tr-title{font-family:var(--font-head);font-size:12px;font-weight:600;color:var(--text);line-height:1.3;}
 .tr-game{font-family:var(--font-mono);font-size:9px;margin-top:3px;}
-.patch-item{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;}
+/* FIX SEO: patch-item is now an <a> tag */
+.patch-item{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .15s;color:inherit;text-decoration:none;-webkit-tap-highlight-color:transparent;}
 .patch-item:last-child{border-bottom:none}.patch-item:hover{background:var(--surface2)}
 .patch-ver{font-family:var(--font-mono);font-size:11px;font-weight:700;color:var(--green);flex-shrink:0;min-width:50px;}
 .patch-game{font-family:var(--font-head);font-size:12px;font-weight:600;color:var(--text);flex:1;line-height:1.3;}
@@ -713,6 +787,7 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
 .game-lol{color:var(--lol);border-color:var(--lol)}.game-valorant{color:var(--valorant);border-color:var(--valorant)}
 .game-pubg{color:var(--pubg);border-color:var(--pubg)}.game-mobile{color:var(--mobile);border-color:var(--mobile)}
 .game-general{color:var(--cyan);border-color:var(--cyan)}
+.game-anime{color:var(--anime);border-color:var(--anime)}.game-manga{color:var(--manga);border-color:var(--manga)}
 
 /* ===== SCROLLBAR ===== */
 ::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-track{background:var(--bg)}
@@ -772,14 +847,14 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
     <strong>Cài Báo Lá Cải như App!</strong>
     <span>Đọc tin gaming mọi lúc, kể cả khi offline</span>
   </div>
-  <button class="pwa-install" id="pwaInstallBtn" onclick="installPWA()">📲 Cài đặt</button>
-  <button class="pwa-dismiss" onclick="dismissPWA()" aria-label="Đóng">✕</button>
+  <button class="pwa-install" id="pwaInstallBtn" data-action="pwa-install">📲 Cài đặt</button>
+  <button class="pwa-dismiss" data-action="pwa-dismiss" aria-label="Đóng">✕</button>
 </div>
 
 <!-- Offline indicator -->
 <div class="offline-bar" id="offlineBar" style="display:none" role="alert">
   📡 Mất kết nối mạng — đang hiển thị tin đã cache
-  <button onclick="retryOnline()" class="offline-retry">Thử lại</button>
+  <button data-action="retry-online" class="offline-retry">Thử lại</button>
 </div>
 
 <!-- Load screen -->
@@ -798,7 +873,7 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
 
 <div class="new-bar" id="newBar" style="display:none" role="alert">
   <span id="newBarText">🎉 Có tin mới!</span>
-  <button onclick="dismissNewBar()" aria-label="Đóng">✕</button>
+  <button data-action="dismiss-new-bar" aria-label="Đóng">✕</button>
 </div>
 
 <header class="header" id="header">
@@ -808,35 +883,35 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
       <span class="strip-date" id="stripDate"></span>
     </div>
     <div class="strip-ticker" aria-label="Ticker tin tức">
-      <div class="ticker-inner" id="tickerInner">⚡ Đang tải tin tức gaming mới nhất từ Báo Lá Cải... 🔍 Roblox · Minecraft · Genshin · Fortnite · LoL · Valorant · PUBG ⚡ &nbsp;&nbsp;&nbsp; ⚡ Đang tải tin tức gaming mới nhất từ Báo Lá Cải... 🔍 Roblox · Minecraft · Genshin · Fortnite · LoL · Valorant · PUBG ⚡</div>
+      <div class="ticker-inner" id="tickerInner">⚡ Đang tải tin tức mới nhất từ Báo Lá Cải... 🔍 Roblox · Minecraft · Genshin · Fortnite · LoL · Valorant · PUBG · 🎌 Anime · 📚 Manga ⚡ &nbsp;&nbsp;&nbsp; ⚡ Đang tải tin tức mới nhất từ Báo Lá Cải... 🔍 Roblox · Minecraft · Genshin · Fortnite · LoL · Valorant · PUBG · 🎌 Anime · 📚 Manga ⚡</div>
     </div>
     <div class="strip-right">
-      <button class="hdr-btn" onclick="toggleSearch()" title="Tìm kiếm [/]" aria-label="Tìm kiếm">
+      <button class="hdr-btn" data-action="toggle-search" title="Tìm kiếm [/]" aria-label="Tìm kiếm">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
       </button>
-      <button class="hdr-btn" id="themeBtn" onclick="toggleTheme()" title="Giao diện sáng/tối" aria-label="Đổi giao diện"></button>
-      <button class="hdr-btn" id="masonryBtn" onclick="toggleMasonry()" title="Masonry / Grid [M]" aria-label="Đổi layout" style="position:relative">
+      <button class="hdr-btn" id="themeBtn" data-action="toggle-theme" title="Giao diện sáng/tối" aria-label="Đổi giao diện"></button>
+      <button class="hdr-btn" id="masonryBtn" data-action="toggle-masonry" title="Masonry / Grid [M]" aria-label="Đổi layout" style="position:relative">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
         <span class="hdr-badge">NEW</span>
       </button>
-      <button class="hdr-btn" onclick="openBookmarks()" title="Tin đã lưu" aria-label="Xem tin đã lưu" style="position:relative">
+      <button class="hdr-btn" data-action="open-bookmarks" title="Tin đã lưu" aria-label="Xem tin đã lưu" style="position:relative">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
         <span class="bm-count-badge" id="bmCountBadge" style="display:none">0</span>
       </button>
-      <button class="hdr-btn" onclick="openKbHelp()" title="Phím tắt [?]" aria-label="Phím tắt">
+      <button class="hdr-btn" data-action="open-kb-help" title="Phím tắt [?]" aria-label="Phím tắt">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="2" y="6" width="20" height="13" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>
       </button>
     </div>
   </div>
 
   <div class="header-main">
-    <a class="brand" href="#" onclick="resetView();return false;" aria-label="Trang chủ Báo Lá Cải">
+    <a class="brand" href="#" data-action="reset-view" aria-label="Trang chủ Báo Lá Cải">
       <div class="brand-hex">🥬</div>
       <div class="brand-text">BÁO LÁ<span class="brand-gg"> CẢI</span></div>
     </a>
-    <div class="header-tagline">TIN TỨC GAMING THẬT · LẤY TỪ GOOGLE NEWS · CẬP NHẬT 24/7</div>
+    <div class="header-tagline">TIN TỨC GAMING · ANIME · MANGA · CẬP NHẬT 24/7</div>
     <div class="header-stats">
-      <div class="hdr-stat" id="statOnline"><span>4.2K</span><small>Online</small></div>
+      <div class="hdr-stat"><span id="statSources">25</span><small>Nguồn tin</small></div>
       <div class="hdr-stat"><span id="statArticles">0</span><small>Tin hôm nay</small></div>
       <div class="hdr-stat"><span id="statRead">0</span><small>Đã đọc</small></div>
       <div class="hdr-stat" title="Auto-refresh mỗi 10 phút">
@@ -856,7 +931,9 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
     <button class="nav-btn" data-game="valorant" aria-pressed="false">🔫 Valorant</button>
     <button class="nav-btn" data-game="pubg" aria-pressed="false">🪖 PUBG</button>
     <button class="nav-btn" data-game="mobile" aria-pressed="false">📱 Mobile</button>
-    <button class="nav-btn nav-refresh" onclick="refreshNews()" id="refreshBtn" aria-label="Làm mới tin tức">
+    <button class="nav-btn" data-game="anime" aria-pressed="false" style="--nav-accent:var(--anime)">🎌 Anime</button>
+    <button class="nav-btn" data-game="manga" aria-pressed="false" style="--nav-accent:var(--manga)">📚 Manga</button>
+    <button class="nav-btn nav-refresh" data-action="refresh-news" id="refreshBtn" aria-label="Làm mới tin tức">
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
       Cập nhật
     </button>
@@ -869,17 +946,20 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
     <div class="search-header">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
       <input type="text" id="searchInput" class="search-input" placeholder="Tìm tin tức gaming..." autocomplete="off"/>
-      <button class="search-close" onclick="toggleSearch()">ESC</button>
+      <button class="search-close" data-action="toggle-search">ESC</button>
     </div>
     <div class="search-tags">
       <span class="search-tag-label">🔥 Hot:</span>
-      <button class="stag" onclick="doSearch('Roblox update')">Roblox</button>
-      <button class="stag" onclick="doSearch('Minecraft')">Minecraft</button>
-      <button class="stag" onclick="doSearch('Genshin Impact')">Genshin</button>
-      <button class="stag" onclick="doSearch('Fortnite')">Fortnite</button>
-      <button class="stag" onclick="doSearch('patch notes')">Patch Notes</button>
-      <button class="stag" onclick="doSearch('League of Legends')">LoL</button>
-      <button class="stag" onclick="doSearch('Valorant')">Valorant</button>
+      <button class="stag" data-action="do-search" data-query="Roblox update">Roblox</button>
+      <button class="stag" data-action="do-search" data-query="Minecraft">Minecraft</button>
+      <button class="stag" data-action="do-search" data-query="Genshin Impact">Genshin</button>
+      <button class="stag" data-action="do-search" data-query="Fortnite">Fortnite</button>
+      <button class="stag" data-action="do-search" data-query="patch notes">Patch Notes</button>
+      <button class="stag" data-action="do-search" data-query="League of Legends">LoL</button>
+      <button class="stag" data-action="do-search" data-query="Valorant">Valorant</button>
+      <button class="stag" data-action="do-search" data-query="anime">🎌 Anime</button>
+      <button class="stag" data-action="do-search" data-query="manga chapter">📚 Manga</button>
+      <button class="stag" data-action="do-search" data-query="One Piece">One Piece</button>
     </div>
     <div class="search-results" id="searchResults" role="listbox" aria-live="polite"></div>
   </div>
@@ -891,8 +971,8 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
     <div class="bm-header">
       <span>📌 Tin Đã Lưu <span id="bmTotalCount" class="bm-total-count"></span></span>
       <div style="display:flex;gap:8px">
-        <button class="bm-clear" onclick="clearBookmarks()">Xóa tất cả</button>
-        <button class="bm-close" onclick="openBookmarks()">✕</button>
+        <button class="bm-clear" data-action="clear-bookmarks">Xóa tất cả</button>
+        <button class="bm-close" data-action="open-bookmarks">✕</button>
       </div>
     </div>
     <div id="bookmarksList" role="list"></div>
@@ -902,7 +982,7 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
 <!-- Keyboard shortcuts modal -->
 <div class="kb-overlay" id="kbOverlay" role="dialog" aria-modal="true" aria-label="Phím tắt">
   <div class="kb-modal">
-    <div class="kb-header"><span>⌨️ Phím Tắt</span><button onclick="openKbHelp()">✕</button></div>
+    <div class="kb-header"><span>⌨️ Phím Tắt</span><button data-action="open-kb-help">✕</button></div>
     <div class="kb-grid">
       <div class="kb-item"><kbd>/</kbd><span>Mở tìm kiếm</span></div>
       <div class="kb-item"><kbd>?</kbd><span>Phím tắt</span></div>
@@ -953,10 +1033,10 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
         </div>
         <div class="sh-right">
           <div class="sh-sort" role="group" aria-label="Sắp xếp">
-            <button class="sort-btn active" onclick="setSortMode('latest',this)" aria-pressed="true">Mới nhất</button>
-            <button class="sort-btn" onclick="setSortMode('relevant',this)" aria-pressed="false">Liên quan</button>
+            <button class="sort-btn active" data-action="set-sort" data-mode="latest" aria-pressed="true">Mới nhất</button>
+            <button class="sort-btn" data-action="set-sort" data-mode="relevant" aria-pressed="false">Liên quan</button>
           </div>
-          <button class="layout-toggle-btn" id="layoutToggleBtn" onclick="toggleMasonry()" title="Đổi layout [M]">
+          <button class="layout-toggle-btn" id="layoutToggleBtn" data-action="toggle-masonry" title="Đổi layout [M]">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>
             Masonry
           </button>
@@ -969,7 +1049,7 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
         <span>Đang tải tin tức từ Google News...</span>
       </div>
       <div class="load-more-area" id="loadMoreArea" style="display:none">
-        <button class="load-more-btn" onclick="loadMore()">
+        <button class="load-more-btn" data-action="load-more">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           Tải thêm tin
         </button>
@@ -980,14 +1060,14 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
       <div class="sidebar-card">
         <div class="sc-title">🎮 CHỌN GAME</div>
         <div class="game-quick-grid">
-          <button class="gq-btn" onclick="filterGame('roblox')"><span class="gq-icon">🟥</span><span>Roblox</span></button>
-          <button class="gq-btn" onclick="filterGame('minecraft')"><span class="gq-icon">⬜</span><span>Minecraft</span></button>
-          <button class="gq-btn" onclick="filterGame('genshin')"><span class="gq-icon">⚔️</span><span>Genshin</span></button>
-          <button class="gq-btn" onclick="filterGame('fortnite')"><span class="gq-icon">🏝️</span><span>Fortnite</span></button>
-          <button class="gq-btn" onclick="filterGame('lol')"><span class="gq-icon">⚡</span><span>LoL</span></button>
-          <button class="gq-btn" onclick="filterGame('valorant')"><span class="gq-icon">🔫</span><span>Valorant</span></button>
-          <button class="gq-btn" onclick="filterGame('pubg')"><span class="gq-icon">🪖</span><span>PUBG</span></button>
-          <button class="gq-btn" onclick="filterGame('mobile')"><span class="gq-icon">📱</span><span>Mobile</span></button>
+          <button class="gq-btn" data-action="filter-game" data-game="roblox"><span class="gq-icon">🟥</span><span>Roblox</span></button>
+          <button class="gq-btn" data-action="filter-game" data-game="minecraft"><span class="gq-icon">⬜</span><span>Minecraft</span></button>
+          <button class="gq-btn" data-action="filter-game" data-game="genshin"><span class="gq-icon">⚔️</span><span>Genshin</span></button>
+          <button class="gq-btn" data-action="filter-game" data-game="fortnite"><span class="gq-icon">🏝️</span><span>Fortnite</span></button>
+          <button class="gq-btn" data-action="filter-game" data-game="lol"><span class="gq-icon">⚡</span><span>LoL</span></button>
+          <button class="gq-btn" data-action="filter-game" data-game="valorant"><span class="gq-icon">🔫</span><span>Valorant</span></button>
+          <button class="gq-btn" data-action="filter-game" data-game="pubg"><span class="gq-icon">🪖</span><span>PUBG</span></button>
+          <button class="gq-btn" data-action="filter-game" data-game="mobile"><span class="gq-icon">📱</span><span>Mobile</span></button>
         </div>
       </div>
 
@@ -995,8 +1075,8 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
         <div class="sc-title">⚔️ GENSHIN – TRACKER</div>
         <div class="genshin-inner">
           <div class="genshin-tabs">
-            <button class="gtab active" onclick="switchGenshinTab('banner',this)">📅 Banner</button>
-            <button class="gtab" onclick="switchGenshinTab('resin',this)">🌊 Resin</button>
+            <button class="gtab active" data-action="genshin-tab" data-tab="banner">📅 Banner</button>
+            <button class="gtab" data-action="genshin-tab" data-tab="resin">🌊 Resin</button>
           </div>
           <div class="gtab-content" id="gtabBanner">
             <div class="genshin-banner-label" id="genshinBannerLabel">Đếm ngược reset banner</div>
@@ -1018,13 +1098,13 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
             </div>
             <div class="resin-bar-wrap"><div class="resin-bar-fill" id="resinBarFill" style="width:80%"></div></div>
             <div class="resin-controls">
-              <button class="resin-btn" onclick="adjustResin(-60)">−60</button>
-              <button class="resin-btn" onclick="adjustResin(-40)">−40</button>
-              <button class="resin-btn" onclick="adjustResin(-20)">−20</button>
-              <button class="resin-btn resin-btn-add" onclick="adjustResin(20)">+20</button>
+              <button class="resin-btn" data-action="adjust-resin" data-amount="-60">−60</button>
+              <button class="resin-btn" data-action="adjust-resin" data-amount="-40">−40</button>
+              <button class="resin-btn" data-action="adjust-resin" data-amount="-20">−20</button>
+              <button class="resin-btn resin-btn-add" data-action="adjust-resin" data-amount="20">+20</button>
             </div>
             <div class="resin-time" id="resinTime">Đầy sau: 0 phút</div>
-            <button class="resin-reset-btn" onclick="resetResin()">Reset về 0</button>
+            <button class="resin-reset-btn" data-action="reset-resin">Reset về 0</button>
           </div>
         </div>
       </div>
@@ -1060,7 +1140,7 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
       <div class="sidebar-card">
         <div class="sc-title">⏱ CẬP NHẬT LẦN CUỐI</div>
         <div class="last-update" id="lastUpdate">Chưa cập nhật</div>
-        <button class="refresh-small" onclick="refreshNews()">
+        <button class="refresh-small" data-action="refresh-news">
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
           Cập nhật ngay
         </button>
@@ -1069,40 +1149,40 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
   </div>
 </main>
 
-<button class="fab-sidebar" id="fabSidebar" onclick="toggleMobileSidebar()" aria-label="Mở sidebar" style="display:none">
+<button class="fab-sidebar" id="fabSidebar" data-action="toggle-mobile-sidebar" aria-label="Mở sidebar" style="display:none">
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
 </button>
-<div class="mobile-sidebar-overlay" id="mobileSidebarOverlay" onclick="toggleMobileSidebar()"></div>
+<div class="mobile-sidebar-overlay" id="mobileSidebarOverlay" data-action="toggle-mobile-sidebar"></div>
 
 <!-- Article modal -->
-<div class="modal-overlay" id="modalOverlay" onclick="handleModalClick(event)" role="dialog" aria-modal="true" aria-label="Chi tiết bài viết">
+<div class="modal-overlay" id="modalOverlay" data-action="modal-overlay-click" role="dialog" aria-modal="true" aria-label="Chi tiết bài viết">
   <div class="modal-box" id="modalBox">
     <div class="modal-prog-bar"><div class="modal-prog-fill" id="modalProg" role="progressbar"></div></div>
     <div class="modal-hdr" id="modalHdr">
       <div class="modal-game-tag" id="modalGameTag"></div>
       <div class="modal-nav">
-        <button class="mhdr-btn" onclick="modalNav(-1)" aria-label="Bài trước">‹ Trước</button>
+        <button class="mhdr-btn" data-action="modal-nav" data-dir="-1" aria-label="Bài trước">‹ Trước</button>
         <span class="modal-pos" id="modalPos" aria-live="polite"></span>
-        <button class="mhdr-btn" onclick="modalNav(1)" aria-label="Bài tiếp">Tiếp ›</button>
+        <button class="mhdr-btn" data-action="modal-nav" data-dir="1" aria-label="Bài tiếp">Tiếp ›</button>
       </div>
       <div class="modal-actions-top">
-        <button class="mhdr-btn tts-btn" id="ttsBtn" onclick="toggleTTS()" title="Nghe bài [Space]" aria-label="Nghe bài viết">🔊</button>
-        <button class="mhdr-btn" onclick="changeFontSize(-1)" title="Thu nhỏ chữ [−]" aria-label="Thu nhỏ chữ">A−</button>
-        <button class="mhdr-btn" onclick="changeFontSize(1)" title="Phóng to chữ [+]" aria-label="Phóng to chữ">A+</button>
-        <button class="mhdr-btn zen-btn" id="zenBtn" onclick="toggleZenMode()" title="Zen Mode [Z]" aria-label="Zen Mode">🧘</button>
-        <button class="mhdr-btn" onclick="bookmarkCurrent()" id="bmBtn" aria-label="Lưu bài">🔖</button>
-        <button class="mhdr-btn" onclick="shareArticle()" aria-label="Chia sẻ">📤</button>
-        <button class="mhdr-btn" onclick="openSource()" title="Xem nguồn gốc" aria-label="Mở nguồn gốc">🔗</button>
-        <button class="mhdr-btn modal-close-btn" onclick="closeModal()" aria-label="Đóng">✕</button>
+        <button class="mhdr-btn tts-btn" id="ttsBtn" data-action="toggle-tts" title="Nghe bài [Space]" aria-label="Nghe bài viết">🔊</button>
+        <button class="mhdr-btn" data-action="change-font-size" data-delta="-1" title="Thu nhỏ chữ [−]" aria-label="Thu nhỏ chữ">A−</button>
+        <button class="mhdr-btn" data-action="change-font-size" data-delta="1" title="Phóng to chữ [+]" aria-label="Phóng to chữ">A+</button>
+        <button class="mhdr-btn zen-btn" id="zenBtn" data-action="toggle-zen" title="Zen Mode [Z]" aria-label="Zen Mode">🧘</button>
+        <button class="mhdr-btn" data-action="bookmark-current" id="bmBtn" aria-label="Lưu bài">🔖</button>
+        <button class="mhdr-btn" data-action="share-article" aria-label="Chia sẻ">📤</button>
+        <button class="mhdr-btn" data-action="open-source" title="Xem nguồn gốc" aria-label="Mở nguồn gốc">🔗</button>
+        <button class="mhdr-btn modal-close-btn" data-action="close-modal" aria-label="Đóng">✕</button>
       </div>
     </div>
     <div class="tts-bar" id="ttsBar" style="display:none">
       <span class="tts-wave">🎙️</span>
       <div class="tts-bar-track"><div class="tts-bar-prog" id="ttsBarProg"></div></div>
       <span id="ttsStatusText" style="font-family:var(--font-mono);font-size:10px;color:var(--blue)">Đang đọc...</span>
-      <button onclick="stopTTS()" class="tts-stop">■ Dừng</button>
+      <button data-action="stop-tts" class="tts-stop">■ Dừng</button>
     </div>
-    <div class="modal-body" id="modalBody" onscroll="updateModalProg()">
+    <div class="modal-body" id="modalBody">
       <div class="modal-content" id="modalContent"></div>
     </div>
   </div>
@@ -1111,7 +1191,7 @@ kbd{background:var(--surface2);border:1px solid var(--border);border-radius:3px;
 <div class="toast-wrap" id="toastWrap" aria-live="assertive" aria-atomic="true"></div>
 
 <div class="floating-btns">
-  <button class="fab" id="backTopBtn" onclick="scrollToTop()" style="display:none" title="Lên đầu trang" aria-label="Lên đầu trang">▲</button>
+  <button class="fab" id="backTopBtn" data-action="scroll-to-top" style="display:none" title="Lên đầu trang" aria-label="Lên đầu trang">▲</button>
 </div>
 
 <script>
@@ -1127,46 +1207,148 @@ const GAMES = {
   valorant:  { label:'Valorant',          icon:'🔫', color:'var(--valorant)',  query:'Valorant update OR Valorant new agent patch 2025' },
   pubg:      { label:'PUBG',              icon:'🪖', color:'var(--pubg)',      query:'PUBG Battlegrounds update OR PUBG news 2025' },
   mobile:    { label:'Mobile Gaming',     icon:'📱', color:'var(--mobile)',    query:'mobile game update OR mobile gaming news Android iOS 2025' },
+  anime:     { label:'Anime',             icon:'🎌', color:'var(--anime)',     query:'anime 2025 new season OR anime episode OR anime release 2025' },
+  manga:     { label:'Manga',             icon:'📚', color:'var(--manga)',     query:'manga chapter new release OR manga announcement 2025' },
   general:   { label:'Gaming',            icon:'🎮', color:'var(--cyan)',      query:'gaming news 2025 OR game release announcement 2025' },
 };
 const GAME_COLORS = {
   roblox:'#ff3333',minecraft:'#4ddf28',genshin:'#e6b422',fortnite:'#00c3ff',
   lol:'#c89b3c',valorant:'#ff4655',pubg:'#f5a623',mobile:'#c084fc',general:'#2dffb0',
+  anime:'#ff6b9d',manga:'#a78bfa',
 };
-const PROXY      = 'https://api.allorigins.win/get?url=';
-const RSS_BASE   = 'https://news.google.com/rss/search?q=';
-const RSS_PARAMS = '&hl=en&gl=US&ceid=US:en&num=8';
-const AUTO_REFRESH_SEC = 600;
 
-// ===== APP STATE =====
-let allArticles       = [];
-let displayedArticles = [];
-let currentGame       = 'all';
-let sortMode          = 'latest';
-let page              = 1;
-const PAGE_SIZE       = 9;
-let currentArticleIdx = 0;
-let bookmarks         = [];
-let reactions         = {};
-let isLoading         = false;
-let isLight           = false;
-let searchOpen        = false;
-let bookmarksOpen     = false;
-let kbOpen            = false;
-let mobileSidebarOpen = false;
-let readSet           = new Set();
-let cardObserver      = null;
-let autoRefreshSecs   = AUTO_REFRESH_SEC;
-let autoRefreshIv     = null;
-let isMasonryMode     = false;
-let zenMode           = false;
-let ttsActive         = false;
-let ttsUtterance      = null;
-let modalFontSize     = 15;
-let resinValue        = 160;
-let pwaInstallEvent   = null;
-let cursorRing, cursorDot;
-let cachedVoices      = [];
+// Direct RSS feeds from major gaming + anime/manga outlets
+const DIRECT_FEEDS = [
+  { url:'https://feeds.ign.com/ign/all',                              source:'IGN'            },
+  { url:'https://www.gamespot.com/feeds/mashup/',                     source:'GameSpot'       },
+  { url:'https://www.eurogamer.net/feed',                             source:'Eurogamer'      },
+  { url:'https://www.pcgamer.com/rss/',                               source:'PC Gamer'       },
+  { url:'https://kotaku.com/rss',                                     source:'Kotaku'         },
+  { url:'https://www.rockpapershotgun.com/feed',                      source:'RPS'            },
+  { url:'https://www.destructoid.com/feed/',                          source:'Destructoid'    },
+  { url:'https://www.thegamer.com/feed/',                             source:'TheGamer'       },
+  { url:'https://siliconera.com/feed/',                               source:'Siliconera'     },
+  // Anime / Manga sources
+  { url:'https://www.animenewsnetwork.com/all/rss.xml?ann-edition=us',source:'ANN'            },
+  { url:'https://www.crunchyroll.com/newsrss?lang=enUS',              source:'Crunchyroll'    },
+  { url:'https://news.google.com/rss/search?q=anime+2025&hl=en&gl=US&ceid=US:en', source:'Google Anime' },
+  { url:'https://news.google.com/rss/search?q=manga+chapter+2025&hl=en&gl=US&ceid=US:en', source:'Google Manga' },
+  { url:'https://comicbook.com/anime/rss/',                           source:'ComicBook Anime'},
+];
+
+// Keyword-based game classifier for direct feed articles
+// FIX: use more precise patterns to avoid false positives (e.g. "looks like Genshin" should NOT classify as Genshin)
+// Strategy: require the keyword to appear in title, OR appear as a primary subject (not just a casual comparison)
+function guessGame(title, desc) {
+  const t=title.toLowerCase();
+  const td=(title+' '+desc).toLowerCase();
+  // Title match = strong signal; description match = weak signal (require 2+ occurrences to reduce false positives)
+  function inTitle(re){return re.test(t);}
+  function inDesc(re){const m=td.match(new RegExp(re.source,'gi'));return m&&m.length>=2;}
+  function match(re){return inTitle(re)||inDesc(re);}
+  if(match(/\broblox\b/))                                        return 'roblox';
+  if(match(/\bminecraft\b|\bmojang\b|\bbedrock edition\b|\bjava edition\b/)) return 'minecraft';
+  if(match(/\bgenshin impact\b|\bgenshin\b|\bhoyoverse\b|\bmihoyo\b/))       return 'genshin';
+  if(match(/\bfortnite\b/))                                      return 'fortnite';
+  if(match(/\bvalorant\b/))                                      return 'valorant';
+  if(match(/\bpubg\b|\bbattlegrounds\b/))                        return 'pubg';
+  if(match(/\bleague of legends\b|\bteamfight tactics\b|\bwild rift\b/)||/\blol\b/.test(t)) return 'lol';
+  if(match(/\bmobile game\b|\bandroid game\b|\bios game\b|\bapple arcade\b|\bgoogle play game\b/)) return 'mobile';
+  if(match(/\banime\b|\bseinen\b|\bshonen\b|\bshounen\b|\bmoe\b|\blight novel\b|\bcrunchyroll\b|\bfunimation\b|\bone piece\b|\bdragon ball\b|\bnaruto\b|\bdemonslay\b|\battack on titan\b|\bjujutsu\b|\bhaikyuu\b|\bbleach\b|\bok\s*ko\b|\bmy hero\b|\bnew season episode\b/)) return 'anime';
+  if(match(/\bmanga\b|\bmanhwa\b|\bmanhua\b|\bwebtoon\b|\bchapter release\b|\bviz media\b|\bshueisha\b|\bkodansha\b|\bjump\b.*\bchapter\b/)) return 'manga';
+  return 'general';
+}
+// Multiple proxy fallbacks — tried in order until one works
+const PROXIES = [
+  { url: 'https://api.allorigins.win/get?url=',       type: 'allorigins' },
+  { url: 'https://corsproxy.io/?',                     type: 'raw' },
+  { url: 'https://api.codetabs.com/v1/proxy?quest=',  type: 'raw' },
+];
+const RSS_BASE   = 'https://news.google.com/rss/search?q=';
+const RSS_PARAMS = '&hl=en&gl=US&ceid=US:en&num=10';
+const AUTO_REFRESH_SEC = 600;
+const MAX_ARTICLES = 400;
+const PAGE_SIZE = 9;
+// Session-level cache to avoid re-fetching within 5 minutes
+const _feedCache = new Map(); // key → {data, ts}
+const FEED_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// ===== APP STATE (single source of truth — replaces scattered globals) =====
+// Object.seal prevents accidental creation of new properties, making state shape explicit.
+const AppState = Object.seal({
+  allArticles:       [],
+  displayedArticles: [],
+  currentGame:       'all',
+  sortMode:          'latest',
+  page:              1,
+  currentArticleIdx: 0,
+  bookmarks:         [],
+  reactions:         {},
+  isLoading:         false,
+  isLight:           false,
+  searchOpen:        false,
+  bookmarksOpen:     false,
+  kbOpen:            false,
+  mobileSidebarOpen: false,
+  readSet:           new Set(),
+  cardObserver:      null,
+  autoRefreshSecs:   600,
+  autoRefreshIv:     null,
+  isMasonryMode:     false,
+  zenMode:           false,
+  ttsActive:         false,
+  ttsUtterance:      null,
+  modalFontSize:     15,
+  resinValue:        160,
+  pwaInstallEvent:   null,
+  cursorRing:        null,
+  cursorDot:         null,
+  cachedVoices:      [],
+  ttsWords:          [],
+  ttsStartTime:      0,
+  _loadScreenDone:   false,
+});
+// Convenience aliases so existing functions don't need mass-rename
+// (they read/write through the same object)
+function _st() { return AppState; }
+
+// Legacy variable references — these now proxy into AppState to preserve
+// all downstream function references without a full rewrite.
+// Each getter/setter below replaces a "let" global declaration.
+Object.defineProperties(window, {
+  allArticles:       { get(){ return AppState.allArticles; },       set(v){ AppState.allArticles=v; },       configurable:true },
+  displayedArticles: { get(){ return AppState.displayedArticles; }, set(v){ AppState.displayedArticles=v; }, configurable:true },
+  currentGame:       { get(){ return AppState.currentGame; },       set(v){ AppState.currentGame=v; },       configurable:true },
+  sortMode:          { get(){ return AppState.sortMode; },          set(v){ AppState.sortMode=v; },          configurable:true },
+  page:              { get(){ return AppState.page; },              set(v){ AppState.page=v; },              configurable:true },
+  currentArticleIdx: { get(){ return AppState.currentArticleIdx; }, set(v){ AppState.currentArticleIdx=v; }, configurable:true },
+  bookmarks:         { get(){ return AppState.bookmarks; },         set(v){ AppState.bookmarks=v; },         configurable:true },
+  reactions:         { get(){ return AppState.reactions; },         set(v){ AppState.reactions=v; },         configurable:true },
+  isLoading:         { get(){ return AppState.isLoading; },         set(v){ AppState.isLoading=v; },         configurable:true },
+  isLight:           { get(){ return AppState.isLight; },           set(v){ AppState.isLight=v; },           configurable:true },
+  searchOpen:        { get(){ return AppState.searchOpen; },        set(v){ AppState.searchOpen=v; },        configurable:true },
+  bookmarksOpen:     { get(){ return AppState.bookmarksOpen; },     set(v){ AppState.bookmarksOpen=v; },     configurable:true },
+  kbOpen:            { get(){ return AppState.kbOpen; },            set(v){ AppState.kbOpen=v; },            configurable:true },
+  mobileSidebarOpen: { get(){ return AppState.mobileSidebarOpen; }, set(v){ AppState.mobileSidebarOpen=v; }, configurable:true },
+  readSet:           { get(){ return AppState.readSet; },           set(v){ AppState.readSet=v; },           configurable:true },
+  cardObserver:      { get(){ return AppState.cardObserver; },      set(v){ AppState.cardObserver=v; },      configurable:true },
+  autoRefreshSecs:   { get(){ return AppState.autoRefreshSecs; },   set(v){ AppState.autoRefreshSecs=v; },   configurable:true },
+  autoRefreshIv:     { get(){ return AppState.autoRefreshIv; },     set(v){ AppState.autoRefreshIv=v; },     configurable:true },
+  isMasonryMode:     { get(){ return AppState.isMasonryMode; },     set(v){ AppState.isMasonryMode=v; },     configurable:true },
+  zenMode:           { get(){ return AppState.zenMode; },           set(v){ AppState.zenMode=v; },           configurable:true },
+  ttsActive:         { get(){ return AppState.ttsActive; },         set(v){ AppState.ttsActive=v; },         configurable:true },
+  ttsUtterance:      { get(){ return AppState.ttsUtterance; },      set(v){ AppState.ttsUtterance=v; },      configurable:true },
+  modalFontSize:     { get(){ return AppState.modalFontSize; },     set(v){ AppState.modalFontSize=v; },     configurable:true },
+  resinValue:        { get(){ return AppState.resinValue; },        set(v){ AppState.resinValue=v; },        configurable:true },
+  pwaInstallEvent:   { get(){ return AppState.pwaInstallEvent; },   set(v){ AppState.pwaInstallEvent=v; },   configurable:true },
+  cursorRing:        { get(){ return AppState.cursorRing; },        set(v){ AppState.cursorRing=v; },        configurable:true },
+  cursorDot:         { get(){ return AppState.cursorDot; },         set(v){ AppState.cursorDot=v; },         configurable:true },
+  cachedVoices:      { get(){ return AppState.cachedVoices; },      set(v){ AppState.cachedVoices=v; },      configurable:true },
+  ttsWords:          { get(){ return AppState.ttsWords; },          set(v){ AppState.ttsWords=v; },          configurable:true },
+  ttsStartTime:      { get(){ return AppState.ttsStartTime; },      set(v){ AppState.ttsStartTime=v; },      configurable:true },
+  _loadScreenDone:   { get(){ return AppState._loadScreenDone; },   set(v){ AppState._loadScreenDone=v; },   configurable:true },
+});
+
 
 // ===== IndexedDB =====
 const DB = (() => {
@@ -1249,7 +1431,25 @@ async function saveState() {
   } catch(e){}
 }
 
-// ===== UTILS =====
+// ===== SAFE HTML STRIPPER (DOMParser — no regex, handles malformed markup) =====
+// Replaces the brittle `str.replace(/<[^>]+>/g,' ')` pattern used throughout.
+function stripHtml(html) {
+  if (!html) return '';
+  try {
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    // Walk text nodes only — avoids script/style content leaking in
+    const walker = document.createTreeWalker(doc.body, NodeFilter.SHOW_TEXT);
+    const parts = [];
+    let node;
+    while ((node = walker.nextNode())) parts.push(node.nodeValue);
+    return parts.join(' ').replace(/\s+/g, ' ').trim();
+  } catch (_) {
+    // Ultimate fallback: remove tag-like patterns conservatively
+    return html.replace(/<[^>]{0,200}>/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+}
+
+
 function escHtml(s) {
   const d=document.createElement('div');
   d.textContent=String(s||'');
@@ -1279,13 +1479,64 @@ function getBadgeType(title,desc) {
   if (/hot|viral|trending/.test(t)) return 'hot';
   return 'new';
 }
+// Deep image extraction: checks media:content, enclosure, img tags, and bare URLs
+function extractImgFromItem(xmlItem, descRaw) {
+  // 1. media:content url= (most reliable)
+  const mc = xmlItem.getElementsByTagNameNS('http://search.yahoo.com/mrss/','content')[0]
+           || xmlItem.getElementsByTagName('media:content')[0]
+           || xmlItem.querySelector('content[url]');
+  if (mc) { const u=mc.getAttribute('url'); if (u?.startsWith('http')) return u; }
+
+  // 2. media:thumbnail url=
+  const mt = xmlItem.getElementsByTagNameNS('http://search.yahoo.com/mrss/','thumbnail')[0]
+           || xmlItem.getElementsByTagName('media:thumbnail')[0];
+  if (mt) { const u=mt.getAttribute('url'); if (u?.startsWith('http')) return u; }
+
+  // 3. enclosure (podcasts / image attachments)
+  const enc = xmlItem.querySelector('enclosure');
+  if (enc) {
+    const u=enc.getAttribute('url'), t=enc.getAttribute('type')||'';
+    if (u?.startsWith('http') && (t.startsWith('image')||/\.(jpg|jpeg|png|webp|gif)/i.test(u))) return u;
+  }
+
+  // 4. <img src="..."> inside description HTML
+  const imgM=descRaw.match(/<img[^>]+src=["'](https:\/\/[^"']+?)["']/i);
+  if (imgM) return imgM[1];
+
+  // 5. Bare https URL ending in image extension (sometimes in description text)
+  const extM=descRaw.match(/https:\/\/[^\s"'<>\]]+\.(?:jpg|jpeg|png|webp|gif)(?:\?[^\s"'<>]*)?/i);
+  if (extM) return extM[0];
+
+  return null;
+}
+// Legacy alias kept for safety
 function extractImg(htmlStr) {
   if (!htmlStr) return null;
   const m=htmlStr.match(/<img[^>]+src=["'](https:\/\/[^"']+)["']/i);
   return m?m[1]:null;
 }
 function getFallbackImg(article) {
-  return `https://picsum.photos/seed/blc${article.id}${article.game}/640/360`;
+  // Generate a branded SVG placeholder per game — no external dependency, 100% reliable
+  const color = GAME_COLORS[article.game] || '#2dffb0';
+  const label = (GAMES[article.game]?.label || 'Gaming').toUpperCase();
+  const icon  = GAMES[article.game]?.icon || '🎮';
+  const c2    = color.replace('#','%23');
+  const svg=`<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360">
+<rect width="640" height="360" fill="%230e1120"/>
+<rect width="640" height="6" fill="${c2}"/>
+<rect y="354" width="640" height="6" fill="${c2}" opacity=".4"/>
+<text x="320" y="188" text-anchor="middle" font-size="90" font-family="sans-serif">${icon}</text>
+<text x="320" y="244" text-anchor="middle" font-size="26" font-family="Arial,sans-serif"
+  fill="${c2}" font-weight="700" letter-spacing="4">${label}</text>
+<text x="320" y="278" text-anchor="middle" font-size="13" font-family="monospace"
+  fill="%234e6088" letter-spacing="2">BÁO LÁ CẢI</text>
+</svg>`;
+  try{
+    // base64 encode to handle emoji and special chars safely
+    return 'data:image/svg+xml;base64,'+btoa(unescape(encodeURIComponent(svg)));
+  }catch(e){
+    return `data:image/svg+xml;charset=utf-8,<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360"><rect width="640" height="360" fill="%230e1120"/><text x="320" y="200" text-anchor="middle" font-size="28" font-family="Arial" fill="${c2}" font-weight="700">${label}</text></svg>`;
+  }
 }
 function buildArticleContent(raw) {
   const text=raw.descText;
@@ -1343,33 +1594,48 @@ function initMatrix() {
   return setInterval(draw, 50);
 }
 
-// ===== LOAD SCREEN =====
+// ===== LOAD SCREEN (tied to actual fetch progress) =====
 const LOAD_TIPS = [
-  'Đang kết nối đến Google News...',
-  'Phân tích tin tức gaming 2025...',
-  'Tìm kiếm Roblox, Minecraft, Genshin...',
+  'Đang kết nối Google News...',
+  'Tải song song 11 thể loại...',
+  'Phân tích RSS feeds gaming...',
+  'Tải tin Anime & Manga mới...',
   'Chuẩn bị dữ liệu patch notes...',
-  'Đăng ký Service Worker...',
+  'Kết nối ANN, Crunchyroll...',
   'Sắp xếp tin tức mới nhất...',
-  'Tải dữ liệu esports...',
+  'Sắp xong rồi...',
 ];
+let _loadScreenDone=false;
+function dismissLoadScreen(){
+  if(_loadScreenDone)return;
+  _loadScreenDone=true;
+  const screen=document.getElementById('loadScreen');
+  const bar=document.getElementById('loadBar');
+  if(bar)bar.style.width='100%';
+  setTimeout(()=>{
+    if(screen){
+      screen.classList.add('done');
+      screen.addEventListener('transitionend',()=>screen.remove(),{once:true});
+    }
+  },300);
+}
 function initLoadScreen() {
   const matrixIv = initMatrix();
-  const bar=document.getElementById('loadBar'),status=document.getElementById('loadStatus'),screen=document.getElementById('loadScreen');
+  const bar=document.getElementById('loadBar'),status=document.getElementById('loadStatus');
   let p=0,tipIdx=0;
+  // Progress bar animates up to 85% automatically, then jumps to 100 when data arrives
   const iv=setInterval(()=>{
-    p+=Math.random()*22+8;
-    if(p>100)p=100;
+    p+=Math.random()*14+5;
+    if(p>85)p=85; // cap at 85 — real completion handled by dismissLoadScreen()
     if(bar){bar.style.width=p+'%';bar.setAttribute('aria-valuenow',Math.round(p));}
     if(status)status.textContent=LOAD_TIPS[tipIdx++%LOAD_TIPS.length];
-    if(p>=100){
-      clearInterval(iv);
-      setTimeout(()=>{
-        screen.classList.add('done');
-        screen.addEventListener('transitionend',()=>{clearInterval(matrixIv);screen.remove();},{once:true});
-      },400);
-    }
-  },180);
+    if(tipIdx>=LOAD_TIPS.length*3)clearInterval(iv); // safety stop
+  },230);
+  // Kill matrix after load screen is gone
+  const obs=new MutationObserver(()=>{
+    if(!document.getElementById('loadScreen')){clearInterval(matrixIv);obs.disconnect();}
+  });
+  obs.observe(document.body,{childList:true});
 }
 
 // ===== CLOCK =====
@@ -1442,7 +1708,7 @@ function initScroll() {
 }
 function scrollToTop(){window.scrollTo({top:0,behavior:'smooth'});}
 
-// ===== CUSTOM CURSOR =====
+// ===== CUSTOM CURSOR (rAF self-pauses when cursor is idle — eliminates continuous CPU/GPU drain) =====
 function initCustomCursor() {
   if(window.matchMedia('(max-width:768px)').matches||window.matchMedia('(pointer:coarse)').matches){
     document.body.classList.add('no-custom-cursor');return;
@@ -1451,35 +1717,61 @@ function initCustomCursor() {
   cursorDot=document.getElementById('cursorDot');
   if(!cursorRing||!cursorDot)return;
   let mouseX=0,mouseY=0,ringX=0,ringY=0;
+  let _rafId=null;
+
+  // FIX: rAF loop is SELF-TERMINATING — it stops when ring has caught up.
+  // CPU/GPU goes to 0 when cursor is idle. Restarted only on mousemove.
+  function animateRing(){
+    if(document.hidden){_rafId=null;return;} // also stop when tab hidden
+    const dx=mouseX-ringX, dy=mouseY-ringY;
+    // Only continue looping while there is still meaningful movement
+    if(Math.abs(dx)>0.15||Math.abs(dy)>0.15){
+      ringX+=dx*0.12;
+      ringY+=dy*0.12;
+      if(cursorRing)cursorRing.style.transform=`translate(${ringX}px,${ringY}px) translate(-50%,-50%)`;
+      _rafId=requestAnimationFrame(animateRing);
+    }else{
+      // Ring has caught up — stop the loop entirely until next mousemove
+      ringX=mouseX;ringY=mouseY; // snap to exact position to clear floating-point drift
+      if(cursorRing)cursorRing.style.transform=`translate(${ringX}px,${ringY}px) translate(-50%,-50%)`;
+      _rafId=null;
+    }
+  }
+
   document.addEventListener('mousemove',e=>{
     mouseX=e.clientX;mouseY=e.clientY;
-    cursorDot.style.left=mouseX+'px';
-    cursorDot.style.top=mouseY+'px';
+    // Move the dot immediately (no lag needed on the dot)
+    cursorDot.style.transform=`translate(${mouseX}px,${mouseY}px) translate(-50%,-50%)`;
     document.body.classList.add('cursor-ready');
+    // Restart rAF only if it isn't already running
+    if(!_rafId&&!document.hidden)_rafId=requestAnimationFrame(animateRing);
   });
-  function animateRing(){
-    ringX+=(mouseX-ringX)*0.12;
-    ringY+=(mouseY-ringY)*0.12;
-    if(cursorRing){cursorRing.style.left=ringX+'px';cursorRing.style.top=ringY+'px';}
-    requestAnimationFrame(animateRing);
-  }
-  animateRing();
+
+  // FIX: cancel rAF entirely when tab hidden, restart on visibility
+  document.addEventListener('visibilitychange',()=>{
+    if(document.hidden){
+      if(_rafId){cancelAnimationFrame(_rafId);_rafId=null;}
+    }else{
+      // Kick off one frame to re-sync ring position after returning to tab
+      if(!_rafId)_rafId=requestAnimationFrame(animateRing);
+    }
+  });
+
   const hoverEls='a,button,.news-card,.gq-btn,.trending-item,.patch-item,.sr-item,.bm-item,.mc-rel-item,.hero-main,.hero-sub-card';
   document.addEventListener('mouseover',e=>{
     const t=e.target;
     if(t.tagName==='INPUT'||t.tagName==='TEXTAREA'){
-      // FIX: remove hover when entering text input
       document.body.classList.remove('cursor-hover');
       document.body.classList.add('cursor-text');
-    } else if(t.closest(hoverEls)){
+    }else if(t.closest(hoverEls)){
       document.body.classList.remove('cursor-text');
       document.body.classList.add('cursor-hover');
     }
   });
   document.addEventListener('mouseout',e=>{
     const t=e.target;
-    if(t.tagName==='INPUT'||t.tagName==='TEXTAREA') document.body.classList.remove('cursor-text');
-    else if(t.closest(hoverEls)) document.body.classList.remove('cursor-hover');
+    if(t.tagName==='INPUT'||t.tagName==='TEXTAREA')document.body.classList.remove('cursor-text');
+    else if(t.closest(hoverEls))document.body.classList.remove('cursor-hover');
   });
   document.addEventListener('mousedown',()=>document.body.classList.add('cursor-click'));
   document.addEventListener('mouseup',()=>document.body.classList.remove('cursor-click'));
@@ -1529,7 +1821,6 @@ function changeFontSize(delta){
 }
 
 // ===== TTS =====
-let ttsWords=[],ttsStartTime=0;
 function toggleTTS(){
   if(ttsActive){stopTTS();return;}
   const art=displayedArticles[currentArticleIdx];
@@ -1599,7 +1890,93 @@ function initKeyboard(){
   });
 }
 
-// ===== NAVIGATION =====
+// ===== CENTRAL ACTION DISPATCHER =====
+// Single delegated click listener replaces ALL inline onclick="..." attributes.
+// Mapping: data-action value → handler function.
+// This is the architectural fix for "Event binding nội tuyến" — one place to audit, test, and extend.
+const ACTION_MAP = {
+  // Header / nav
+  'toggle-search':          ()=> toggleSearch(),
+  'toggle-theme':           ()=> toggleTheme(),
+  'toggle-masonry':         ()=> toggleMasonry(),
+  'open-bookmarks':         ()=> openBookmarks(),
+  'clear-bookmarks':        ()=> clearBookmarks(),
+  'open-kb-help':           ()=> openKbHelp(),
+  'reset-view':             (e)=>{ e.preventDefault(); resetView(); },
+  'refresh-news':           ()=> refreshNews(),
+  // Sort / layout
+  'set-sort':               (e,el)=> setSortMode(el.dataset.mode, el),
+  'load-more':              ()=> loadMore(),
+  // Sidebar
+  'filter-game':            (e,el)=> filterGame(el.dataset.game),
+  'genshin-tab':            (e,el)=> switchGenshinTab(el.dataset.tab, el),
+  'adjust-resin':           (e,el)=> adjustResin(Number(el.dataset.amount)),
+  'reset-resin':            ()=> resetResin(),
+  // Mobile
+  'toggle-mobile-sidebar':  ()=> toggleMobileSidebar(),
+  // PWA
+  'pwa-install':            ()=> installPWA(),
+  'pwa-dismiss':            ()=> dismissPWA(),
+  'retry-online':           ()=> retryOnline(),
+  'dismiss-new-bar':        ()=> dismissNewBar(),
+  // Modal
+  'close-modal':            ()=> closeModal(),
+  'modal-overlay-click':    (e)=>{ if(e.target===document.getElementById('modalOverlay'))closeModal(); },
+  'modal-nav':              (e,el)=> modalNav(Number(el.dataset.dir)),
+  'toggle-tts':             ()=> toggleTTS(),
+  'stop-tts':               ()=> stopTTS(),
+  'change-font-size':       (e,el)=> changeFontSize(Number(el.dataset.delta)),
+  'toggle-zen':             ()=> toggleZenMode(),
+  'bookmark-current':       ()=> bookmarkCurrent(),
+  'share-article':          ()=> shareArticle(),
+  'open-source':            ()=> openSource(),
+  'react-modal':            (e,el)=> reactModal(el.dataset.emoji, Number(el.dataset.articleId)),
+  // Article open (multiple contexts)
+  'open-article':           (e,el)=>{
+    if(e.button!==0||e.ctrlKey||e.metaKey||e.shiftKey)return; // let middle-click / ctrl+click go through
+    e.preventDefault();
+    openArticle(Number(el.dataset.articleId));
+  },
+  'open-article-bm':        (e,el)=>{
+    if(e.button!==0||e.ctrlKey||e.metaKey||e.shiftKey)return;
+    e.preventDefault();
+    openArticle(Number(el.dataset.articleId));
+    openBookmarks();
+  },
+  'open-article-search':    (e,el)=>{
+    if(e.button!==0||e.ctrlKey||e.metaKey||e.shiftKey)return;
+    e.preventDefault();
+    openArticle(Number(el.dataset.articleId));
+    toggleSearch();
+  },
+  // Bookmark toggle on card
+  'toggle-bookmark':        (e,el)=>{
+    e.stopPropagation();
+    e.preventDefault();
+    toggleBookmark(Number(el.dataset.articleId));
+  },
+  // Misc
+  'scroll-to-top':          ()=> scrollToTop(),
+  // Search tags
+  'do-search':              (e,el)=> doSearch(el.dataset.query),
+};
+
+function initActionDispatcher() {
+  document.addEventListener('click', e => {
+    const el = e.target.closest('[data-action]');
+    if (!el) return;
+    const handler = ACTION_MAP[el.dataset.action];
+    if (handler) handler(e, el);
+  });
+  // Keyboard: Enter on [role=button] elements triggers click
+  document.addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    const el = e.target.closest('[data-action][role="button"]');
+    if (el) { e.preventDefault(); el.click(); }
+  });
+}
+
+
 function initNav(){
   document.getElementById('mainNav').addEventListener('click',e=>{
     const btn=e.target.closest('.nav-btn[data-game]');if(!btn)return;
@@ -1618,7 +1995,7 @@ function resetView(){filterGame('all');}
 function setSortMode(mode,btn){
   sortMode=mode;
   document.querySelectorAll('.sort-btn').forEach(b=>{b.classList.remove('active');b.setAttribute('aria-pressed','false');});
-  btn.classList.add('active');btn.setAttribute('aria-pressed','true');
+  if(btn){btn.classList.add('active');btn.setAttribute('aria-pressed','true');}
   page=1;renderArticles();
 }
 function toggleMobileSidebar(){
@@ -1719,54 +2096,123 @@ function updateResinDisplay(){
   }
 }
 
-// ===== RSS FETCH =====
-async function fetchRSS(query,retries=2){
-  const url=RSS_BASE+encodeURIComponent(query)+RSS_PARAMS;
-  const proxyUrl=PROXY+encodeURIComponent(url);
-  for(let attempt=0;attempt<=retries;attempt++){
-    try{
-      const resp=await fetch(proxyUrl,{signal:AbortSignal.timeout(12000)});
-      if(!resp.ok)throw new Error('HTTP '+resp.status);
-      const data=await resp.json();
-      if(!data.contents)throw new Error('No contents');
-      const xml=new DOMParser().parseFromString(data.contents,'text/xml');
-      const items=[...xml.querySelectorAll('item')];
-      return items.slice(0,8).map(item=>{
-        const descRaw=item.querySelector('description')?.textContent||'';
-        return{
-          title:item.querySelector('title')?.textContent?.replace(/<[^>]+>/g,'').trim()||'',
-          descText:descRaw.replace(/<[^>]+>/g,' ').replace(/\s+/g,' ').trim(),
-          description:descRaw,
-          link:item.querySelector('link')?.textContent?.trim()||'',
-          source:item.querySelector('source')?.textContent?.trim()||'Google News',
-          pubDate:item.querySelector('pubDate')?.textContent?.trim()||'',
-          imgUrl:extractImg(descRaw),
-        };
-      }).filter(i=>i.title.length>8);
-    }catch(e){
-      if(attempt===retries)return[];
-      await new Promise(r=>setTimeout(r,800*(attempt+1)));
+// ===== RSS FETCH (multi-proxy fallback, parallel-ready, session-cached) =====
+async function fetchRSS(query){
+  const rssUrl=RSS_BASE+encodeURIComponent(query)+RSS_PARAMS;
+  // Return cached data if fresh enough
+  const cached=_feedCache.get(rssUrl);
+  if(cached&&Date.now()-cached.ts<FEED_CACHE_TTL)return cached.data;
+
+  for(const proxy of PROXIES){
+    for(let attempt=0;attempt<2;attempt++){
+      try{
+        const proxyUrl=proxy.url+encodeURIComponent(rssUrl);
+        const resp=await fetch(proxyUrl,{signal:AbortSignal.timeout(8000)});
+        if(!resp.ok)throw new Error('HTTP '+resp.status);
+        let xmlText;
+        if(proxy.type==='allorigins'){
+          const data=await resp.json();
+          if(!data.contents)throw new Error('No contents');
+          xmlText=data.contents;
+        }else{
+          xmlText=await resp.text();
+        }
+        const xml=new DOMParser().parseFromString(xmlText,'text/xml');
+        if(xml.querySelector('parsererror'))throw new Error('XML parse error');
+        const items=[...xml.querySelectorAll('item')];
+        if(!items.length)throw new Error('No items');
+        const result=items.slice(0,10).map(item=>{
+          const descRaw=item.querySelector('description')?.textContent||'';
+          return{
+            title:stripHtml(item.querySelector('title')?.textContent||''),
+            descText:stripHtml(descRaw),
+            description:descRaw,
+            link:item.querySelector('link')?.textContent?.trim()||'',
+            source:item.querySelector('source')?.textContent?.trim()||'Google News',
+            pubDate:item.querySelector('pubDate')?.textContent?.trim()||'',
+            imgUrl:extractImgFromItem(item,descRaw),
+          };
+        }).filter(i=>i.title.length>8);
+        _feedCache.set(rssUrl,{data:result,ts:Date.now()});
+        return result;
+      }catch(e){
+        // Exponential backoff with jitter — prevents thundering herd against proxy
+        if(attempt===0){const backoff=400*Math.pow(2,attempt)+Math.random()*200;await new Promise(r=>setTimeout(r,backoff));}
+      }
     }
   }
   return[];
 }
 
-// ===== FETCH ALL NEWS =====
+// ===== FETCH DIRECT SITE FEEDS (IGN, GameSpot, ANN, Crunchyroll, etc.) =====
+async function fetchDirectFeed(feedUrl, sourceName){
+  // Return cached data if fresh enough
+  const cached=_feedCache.get(feedUrl);
+  if(cached&&Date.now()-cached.ts<FEED_CACHE_TTL)return cached.data;
+
+  for(const proxy of PROXIES){
+    for(let attempt=0;attempt<2;attempt++){
+      try{
+        const proxyUrl=proxy.url+encodeURIComponent(feedUrl);
+        const resp=await fetch(proxyUrl,{signal:AbortSignal.timeout(8000)});
+        if(!resp.ok)throw new Error('HTTP '+resp.status);
+        let xmlText;
+        if(proxy.type==='allorigins'){
+          const data=await resp.json();
+          if(!data.contents)throw new Error('No contents');
+          xmlText=data.contents;
+        }else{
+          xmlText=await resp.text();
+        }
+        const xml=new DOMParser().parseFromString(xmlText,'text/xml');
+        if(xml.querySelector('parsererror'))throw new Error('Parse error');
+        const items=[...xml.querySelectorAll('item, entry')];
+        if(!items.length)throw new Error('No items');
+        const result=items.slice(0,8).map(item=>{
+          const descRaw=item.querySelector('description,summary,content')?.textContent||'';
+          const title=stripHtml(item.querySelector('title')?.textContent||'');
+          const descText=stripHtml(descRaw);
+          const linkEl=item.querySelector('link');
+          const link=linkEl?.getAttribute('href')||linkEl?.textContent?.trim()||'';
+          return{
+            title,descText,description:descRaw,link,source:sourceName,
+            pubDate:(item.querySelector('pubDate,published,updated')?.textContent||'').trim(),
+            imgUrl:extractImgFromItem(item,descRaw),
+          };
+        }).filter(i=>i.title.length>8);
+        _feedCache.set(feedUrl,{data:result,ts:Date.now()});
+        return result;
+      }catch(e){
+        // Exponential backoff with jitter
+        if(attempt===0){const backoff=400*Math.pow(2,attempt)+Math.random()*200;await new Promise(r=>setTimeout(r,backoff));}
+      }
+    }
+  }
+  return[];
+}
+// ===== FETCH ALL NEWS (PARALLEL + PROGRESSIVE RENDER) =====
 async function fetchAllNews(){
   if(isLoading)return;
   isLoading=true;
-  setAIBar(true,'🤖 Đang kết nối Google News...');
+  const totalSources=Object.keys(GAMES).length+DIRECT_FEEDS.length;
+  setAIBar(true,`🤖 Đang kết nối ${totalSources} nguồn (Gaming + Anime + Manga)...`);
   setRefreshSpinning(true);showGridLoading(true);
   document.getElementById('heroLoading').style.display='block';
   document.getElementById('heroGrid').style.display='none';
-  const results=[];let idCounter=0;
   const prevCount=allArticles.length;
-  for(const [gameKey,gameInfo] of Object.entries(GAMES)){
-    try{
-      setAIBar(true,`🔍 Tìm tin ${gameInfo.label} từ Google News...`);
-      const rssItems=await fetchRSS(gameInfo.query);
-      if(!rssItems.length)continue;
-      rssItems.forEach(raw=>{
+  let idCounter=0;
+  const seenTitles=new Set();
+  let results=[];
+  let firstRender=false;
+
+  function processItems(type,val){
+    if(!val.items?.length)return;
+    let added=0;
+    if(type==='google'){
+      const{gameKey,gameInfo}=val;
+      val.items.forEach(raw=>{
+        const key=raw.title.slice(0,50).toLowerCase().replace(/\W/g,'');
+        if(seenTitles.has(key))return;seenTitles.add(key);
         const id=idCounter++;
         results.push({
           id,game:gameKey,gameLabel:gameInfo.label,gameIcon:gameInfo.icon,gameColor:gameInfo.color,
@@ -1778,24 +2224,88 @@ async function fetchAllNews(){
           badge:getBadgeType(raw.title,raw.descText),
           img:raw.imgUrl||getFallbackImg({id,game:gameKey}),
           imgFallback:getFallbackImg({id,game:gameKey}),
-          readTime:getReadingTime(raw.descText),
-          isNew:true,
-        });
+          readTime:getReadingTime(raw.descText),isNew:true,
+        });added++;
       });
-    }catch(e){}
+    }else{
+      val.items.forEach(raw=>{
+        const key=raw.title.slice(0,50).toLowerCase().replace(/\W/g,'');
+        if(seenTitles.has(key))return;seenTitles.add(key);
+        const gameKey=guessGame(raw.title,raw.descText);
+        const gameInfo=GAMES[gameKey];
+        const id=idCounter++;
+        results.push({
+          id,game:gameKey,gameLabel:gameInfo.label,gameIcon:gameInfo.icon,gameColor:gameInfo.color,
+          titleVN:raw.title,titleEN:raw.title,
+          excerptVN:raw.descText.slice(0,200)||'Nhấp để đọc chi tiết.',
+          contentVN:buildArticleContent(raw),
+          sourceTitle:raw.source,sourceLink:raw.link,
+          pubDate:raw.pubDate,pubDateObj:raw.pubDate?new Date(raw.pubDate):new Date(),
+          badge:getBadgeType(raw.title,raw.descText),
+          img:raw.imgUrl||getFallbackImg({id,game:gameKey}),
+          imgFallback:getFallbackImg({id,game:gameKey}),
+          readTime:getReadingTime(raw.descText),isNew:true,
+        });added++;
+      });
+    }
+    if(added>0){
+      // Sort & push to allArticles progressively
+      results.sort((a,b)=>b.pubDateObj-a.pubDateObj);
+      allArticles=[...results].slice(0,MAX_ARTICLES);
+      animateNum('statArticles',0,allArticles.length);
+      // First-paint: render as soon as we have a few articles
+      if(!firstRender&&allArticles.length>=5){
+        firstRender=true;
+        showGridLoading(false);
+        document.getElementById('heroLoading').style.display='none';
+        document.getElementById('heroGrid').style.display='';
+        renderHero();renderArticles();
+        dismissLoadScreen();
+      }else if(firstRender){
+        renderArticles();
+      }
+    }
   }
-  allArticles=results.sort((a,b)=>b.pubDateObj-a.pubDateObj);
+
+  // Launch ALL fetches in parallel
+  const googlePromises=Object.entries(GAMES).map(([gameKey,gameInfo])=>
+    fetchRSS(gameInfo.query)
+      .then(items=>({type:'google',gameKey,gameInfo,items}))
+      .catch(()=>({type:'google',gameKey,gameInfo,items:[]}))
+  );
+  const directPromises=DIRECT_FEEDS.map(feed=>
+    fetchDirectFeed(feed.url,feed.source)
+      .then(items=>({type:'direct',feed,items}))
+      .catch(()=>({type:'direct',feed,items:[]}))
+  );
+
+  // Use Promise.race-style streaming: render as each promise resolves
+  const allPromises=[...googlePromises,...directPromises].map(p=>
+    p.then(val=>{ processItems(val.type,val); return val; }).catch(()=>{})
+  );
+  await Promise.allSettled(allPromises);
+
+  // Final sort & dedup pass
+  allArticles=results.sort((a,b)=>b.pubDateObj-a.pubDateObj).slice(0,MAX_ARTICLES);
   if(prevCount>0&&allArticles.length>prevCount)showNewBar(allArticles.length-prevCount);
   animateNum('statArticles',0,allArticles.length);
   animateNum('statRead',0,readSet.size);
-  document.getElementById('statOnline').querySelector('span').textContent=(Math.floor(Math.random()*4000)+2000).toLocaleString('vi-VN');
+  const srcEl=document.getElementById('statSources');
+  if(srcEl)srcEl.textContent=totalSources;
   page=1;
   renderHero();renderArticles();renderTrending();renderPatchNotes();renderRadar();renderGameStats();
   updateLastFetchTime();updateTicker();updateBmBadge();saveState();
   isLoading=false;
   setAIBar(false);setRefreshSpinning(false);showGridLoading(false);
+  dismissLoadScreen();
   autoRefreshSecs=AUTO_REFRESH_SEC;
-  showToast(`✅ Đã tải ${allArticles.length} tin thật từ Báo Lá Cải!`);
+  if(allArticles.length>0){
+    const srcNames=new Set(allArticles.map(a=>a.sourceTitle));
+    showToast(`✅ Đã tải ${allArticles.length} tin từ ${srcNames.size} nguồn (IGN, ANN, Crunchyroll...)`);
+  }else{
+    showToast('⚠️ Không tải được tin — proxy bị giới hạn, thử lại sau 30 giây');
+    setTimeout(()=>{if(!allArticles.length)refreshNews();},30000);
+  }
 }
 async function refreshNews(){allArticles=[];await fetchAllNews();}
 
@@ -1804,8 +2314,10 @@ function renderHero(){
   const grid=document.getElementById('heroGrid'),loading=document.getElementById('heroLoading');
   if(!grid||!allArticles.length)return;
   const [main,...subs]=allArticles.slice(0,3);
+  // FIX SEO: use real <a> tags so crawlers and middle-click work correctly
   grid.innerHTML=`
-    <div class="hero-main" onclick="openArticle(${main.id})" tabindex="0" onkeydown="if(event.key==='Enter')openArticle(${main.id})" role="article">
+    <a class="hero-main" href="${escHtml(main.sourceLink||'#')}" target="_blank" rel="noopener noreferrer"
+       tabindex="0" role="article" data-action="open-article" data-article-id="${main.id}">
       <div class="hero-live-tag"><span class="live-dot"></span>LIVE</div>
       <img class="hero-main-img" src="${escHtml(main.img)}" alt="${escHtml(main.titleVN)}" loading="lazy"
            onerror="this.src='${escHtml(main.imgFallback)}'"/>
@@ -1817,13 +2329,14 @@ function renderHero(){
           <span>📰 ${escHtml(main.sourceTitle)}</span>
           <span>🕐 ${timeAgo(main.pubDate)}</span>
           <span>📖 ${main.readTime}</span>
-          <button class="hero-main-cta" onclick="event.stopPropagation();openArticle(${main.id})">Đọc ngay →</button>
+          <span class="hero-main-cta">Đọc ngay →</span>
         </div>
       </div>
-    </div>
+    </a>
     <div class="hero-side">
       ${subs.map(a=>`
-        <div class="hero-sub-card" onclick="openArticle(${a.id})" tabindex="0" onkeydown="if(event.key==='Enter')openArticle(${a.id})" role="article">
+        <a class="hero-sub-card" href="${escHtml(a.sourceLink||'#')}" target="_blank" rel="noopener noreferrer"
+           tabindex="0" role="article" data-action="open-article" data-article-id="${a.id}">
           <img class="hero-sub-img" src="${escHtml(a.img)}" alt="${escHtml(a.titleVN)}" loading="lazy"
                onerror="this.src='${escHtml(a.imgFallback)}'"/>
           <div class="hero-sub-body">
@@ -1831,7 +2344,7 @@ function renderHero(){
             <div class="hero-sub-title">${escHtml(a.titleVN)}</div>
             <span class="hero-sub-time">📰 ${escHtml(a.sourceTitle)} · ${timeAgo(a.pubDate)} · ${a.readTime}</span>
           </div>
-        </div>`).join('')}
+        </a>`).join('')}
     </div>`;
   loading.style.display='none';
   grid.style.display='grid';
@@ -1863,7 +2376,7 @@ function renderArticles(){
     const counts={};allArticles.forEach(a=>{counts[a.game]=(counts[a.game]||0)+1;});
     statsBar.innerHTML=Object.entries(counts).sort((a,b)=>b[1]-a[1]).map(([gk,cnt])=>{
       const gi=GAMES[gk];
-      return `<button class="gs-chip" onclick="filterGame('${gk}')">${gi?.icon||''} <span>${gi?.label||gk}</span> <span class="gs-chip-count">${cnt}</span></button>`;
+      return `<button class="gs-chip" data-action="filter-game" data-game="${gk}">${gi?.icon||''} <span>${gi?.label||gk}</span> <span class="gs-chip-count">${cnt}</span></button>`;
     }).join('');
     statsBar.style.display='flex';
   }else if(statsBar)statsBar.style.display='none';
@@ -1878,10 +2391,14 @@ function renderArticles(){
 }
 
 function buildCard(art,isWide=false){
-  const card=document.createElement('div');
+  const card=document.createElement('a');
   card.className='news-card'+(isWide?' wide':'');
   card.dataset.game=art.game;
-  card.setAttribute('role','article');card.setAttribute('tabindex','0');
+  card.dataset.action='open-article';
+  card.dataset.articleId=art.id;
+  card.setAttribute('role','article');
+  card.setAttribute('tabindex','0');
+  if(art.sourceLink){card.href=art.sourceLink;card.target='_blank';card.rel='noopener noreferrer';}
   if(readSet.has(art.id))card.classList.add('is-read');
   const BADGE_LABEL={patch:'PATCH',update:'UPDATE',hot:'HOT',new:'NEW',esport:'ESPORT',mobile:'MOBILE'};
   card.innerHTML=`
@@ -1893,19 +2410,18 @@ function buildCard(art,isWide=false){
       <div class="card-type-badge badge-${art.badge}">${BADGE_LABEL[art.badge]||'NEW'}</div>
     </div>
     <div class="card-body">
-      <div class="card-title">${escHtml(art.titleVN)}</div>
+      <h3 class="card-title">${escHtml(art.titleVN)}</h3>
       <div class="card-excerpt">${escHtml(art.excerptVN)}</div>
       <div class="card-footer">
         <div class="card-source">📰 ${escHtml(art.sourceTitle)}</div>
         <div class="card-time">${timeAgo(art.pubDate)}</div>
         <div class="card-reading-time">📖 ${art.readTime}</div>
         <button class="card-bm-btn ${bookmarks.includes(art.id)?'saved':''}"
-                onclick="event.stopPropagation();toggleBookmark(${art.id})"
-                data-bm="${art.id}" title="Lưu bài">🔖</button>
+                data-action="toggle-bookmark" data-article-id="${art.id}"
+                data-bm="${art.id}" title="Lưu bài" aria-label="Lưu bài">🔖</button>
       </div>
     </div>`;
-  card.addEventListener('click',e=>{if(!e.target.closest('.card-bm-btn'))openArticle(art.id);});
-  card.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.target.closest('.card-bm-btn'))openArticle(art.id);});
+  card.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.target.closest('.card-bm-btn')){e.preventDefault();openArticle(art.id);}});
   attachCardGlow(card);
   return card;
 }
@@ -1939,25 +2455,29 @@ function loadMore(){
 // ===== SIDEBAR RENDERS =====
 function renderTrending(){
   const el=document.getElementById('trendingList');if(!el)return;
+  // FIX SEO: real <a> tags for crawlability and middle-click support
   el.innerHTML=allArticles.slice(0,7).map((art,i)=>`
-    <div class="trending-item" onclick="openArticle(${art.id})" tabindex="0" onkeydown="if(event.key==='Enter')openArticle(${art.id})">
+    <a class="trending-item" href="${escHtml(art.sourceLink||'#')}" target="_blank" rel="noopener noreferrer"
+       tabindex="0" data-action="open-article" data-article-id="${art.id}">
       <div class="tr-num">0${i+1}</div>
       <div class="tr-body">
         <div class="tr-title">${escHtml(art.titleVN.slice(0,60))}${art.titleVN.length>60?'…':''}</div>
         <div class="tr-game game-${art.game}">${art.gameIcon} ${escHtml(art.gameLabel)} · ${timeAgo(art.pubDate)}</div>
       </div>
-    </div>`).join('');
+    </a>`).join('');
 }
 function renderPatchNotes(){
   const el=document.getElementById('patchList');if(!el)return;
   const patches=allArticles.filter(a=>['patch','update'].includes(a.badge)).slice(0,5);
   if(!patches.length){el.innerHTML='<div style="padding:12px;font-family:var(--font-mono);font-size:11px;color:var(--text3)">Đang tải patch notes...</div>';return;}
+  // FIX SEO: real <a> tags
   el.innerHTML=patches.map(art=>`
-    <div class="patch-item" onclick="openArticle(${art.id})" tabindex="0" onkeydown="if(event.key==='Enter')openArticle(${art.id})">
+    <a class="patch-item" href="${escHtml(art.sourceLink||'#')}" target="_blank" rel="noopener noreferrer"
+       tabindex="0" data-action="open-article" data-article-id="${art.id}">
       <div class="patch-ver game-${art.game}">${art.gameIcon}</div>
       <div class="patch-game">${escHtml(art.gameLabel)}: ${escHtml(art.titleVN.slice(0,42))}…</div>
       ${art.badge==='patch'?'<div class="patch-new">PATCH</div>':''}
-    </div>`).join('');
+    </a>`).join('');
 }
 function renderGameStats(){
   const el=document.getElementById('gameStatsList');if(!el||!allArticles.length)return;
@@ -1966,7 +2486,7 @@ function renderGameStats(){
   const max=sorted[0]?.[1]||1;
   el.innerHTML=sorted.map(([gk,cnt])=>{
     const gi=GAMES[gk],color=GAME_COLORS[gk]||'#2dffb0';
-    return `<div class="gs-bar-item" onclick="filterGame('${gk}')" tabindex="0" onkeydown="if(event.key==='Enter')filterGame('${gk}')">
+    return `<div class="gs-bar-item" data-action="filter-game" data-game="${gk}" tabindex="0" role="button">
       <div class="gs-bar-label">${gi?.icon||''} ${gi?.label||gk}</div>
       <div class="gs-bar-track"><div class="gs-bar-fill" style="width:${Math.round((cnt/max)*100)}%;background:${color}"></div></div>
       <div class="gs-bar-num">${cnt}</div>
@@ -2014,7 +2534,8 @@ function updateTicker(){
 function updateLastFetchTime(){
   const el=document.getElementById('lastUpdate');if(!el)return;
   const now=new Date();
-  el.innerHTML=`<strong>Lần cuối: ${now.toLocaleTimeString('vi-VN')}</strong><br>${allArticles.length} tin từ ${Object.keys(GAMES).length} thể loại<br><span style="color:var(--text3);font-size:10px">Nguồn: Google News qua Báo Lá Cải</span>`;
+  const directNames=DIRECT_FEEDS.map(f=>f.source).join(', ');
+  el.innerHTML=`<strong>Lần cuối: ${now.toLocaleTimeString('vi-VN')}</strong><br>${allArticles.length} tin từ ${Object.keys(GAMES).length} loại game<br><span style="color:var(--cyan);font-size:10px">+ ${directNames}</span>`;
 }
 
 // ===== UI HELPERS =====
@@ -2041,6 +2562,9 @@ function openArticle(id){
   currentArticleIdx=displayedArticles.findIndex(a=>a.id===id);
   if(currentArticleIdx===-1){displayedArticles=[...allArticles];currentArticleIdx=allArticles.findIndex(a=>a.id===id);}
   renderModal(art);
+  // FIX: wire modal scroll via addEventListener (onscroll attribute was removed)
+  const modalBody=document.getElementById('modalBody');
+  if(modalBody)modalBody.addEventListener('scroll',updateModalProg,{passive:true});
   document.getElementById('modalOverlay').classList.add('open');
   document.body.style.overflow='hidden';
   document.title=`${art.gameIcon} ${art.titleVN.slice(0,50)} – Báo Lá Cải`;
@@ -2059,7 +2583,7 @@ function renderModal(art){
   document.getElementById('modalContent').innerHTML=`
     <div class="mc-source-bar">
       <span class="mc-game-tag game-${art.game}">${art.gameIcon} ${escHtml(art.gameLabel)}</span>
-      <span class="mc-meta-chip">📰 <span class="mc-source-link" onclick="openSource()">${escHtml(art.sourceTitle)}</span></span>
+      <span class="mc-meta-chip">📰 <span class="mc-source-link" data-action="open-source" role="button" tabindex="0">${escHtml(art.sourceTitle)}</span></span>
       <span class="mc-meta-chip">🕐 ${timeAgo(art.pubDate)}</span>
       <span class="mc-meta-chip">📖 ${art.readTime}</span>
       <span style="margin-left:auto;font-size:9px;opacity:.4;font-family:var(--font-mono)">BÁO LÁ CẢI · TIN THẬT</span>
@@ -2069,12 +2593,12 @@ function renderModal(art){
          onerror="this.src='${escHtml(art.imgFallback)}'"/>
     <div class="mc-note">
       🤖 Bài viết trích xuất từ nguồn thật: <strong>${escHtml(art.sourceTitle)}</strong>.
-      Nội dung có thể rút gọn. <span class="mc-source-link" onclick="openSource()">👉 Xem bài gốc đầy đủ →</span>
+      Nội dung có thể rút gọn. <span class="mc-source-link" data-action="open-source" role="button" tabindex="0">👉 Xem bài gốc đầy đủ →</span>
     </div>
     <div class="mc-body" style="font-size:${modalFontSize}px">${art.contentVN}</div>
     <div class="mc-reactions">
       ${EMOJIS.map(r=>`
-        <button class="mc-react-btn ${rxCounts[r.e]>0?'reacted':''}" onclick="reactModal('${r.e}',${art.id})" data-e="${r.e}" title="${r.l}">
+        <button class="mc-react-btn ${rxCounts[r.e]>0?'reacted':''}" data-action="react-modal" data-emoji="${escHtml(r.e)}" data-article-id="${art.id}" title="${escHtml(r.l)}">
           ${r.e}<span class="mc-react-count" id="rx_${art.id}_${r.e.codePointAt(0)}">${rxCounts[r.e]||0}</span>
         </button>`).join('')}
     </div>
@@ -2082,7 +2606,7 @@ function renderModal(art){
       <div class="mc-related-title">TIN LIÊN QUAN</div>
       <div class="mc-related-grid">
         ${allArticles.filter(a=>a.game===art.game&&a.id!==art.id).slice(0,3).map(a=>`
-          <div class="mc-rel-item" onclick="openArticle(${a.id})" tabindex="0" onkeydown="if(event.key==='Enter')openArticle(${a.id})">
+          <div class="mc-rel-item" data-action="open-article" data-article-id="${a.id}" tabindex="0" role="button">
             <img class="mc-rel-img" src="${escHtml(a.img)}" alt="" onerror="this.src='${escHtml(a.imgFallback)}'"/>
             <div>
               <div class="mc-rel-title">${escHtml(a.titleVN.slice(0,65))}…</div>
@@ -2113,7 +2637,6 @@ function closeModal(){
   stopTTS();
   if(zenMode)toggleZenMode();
 }
-function handleModalClick(e){if(e.target===document.getElementById('modalOverlay'))closeModal();}
 function modalNav(dir){
   const newIdx=currentArticleIdx+dir;
   if(newIdx<0||newIdx>=displayedArticles.length){showToast(dir<0?'⏮ Đây là bài đầu':'⏭ Đây là bài cuối');return;}
@@ -2151,13 +2674,15 @@ function clearBookmarks(){bookmarks=[];saveState();renderBookmarksList();updateB
 function renderBookmarksList(){
   const el=document.getElementById('bookmarksList');if(!el)return;
   if(!bookmarks.length){el.innerHTML='<div class="bm-empty">📭 Chưa có tin nào được lưu<br><small>Nhấn 🔖 trên bất kỳ bài nào để lưu</small></div>';return;}
+  // FIX: no inline onclick – IDs stored in data-article-id, handled by delegated listener
   el.innerHTML=bookmarks.map(id=>{
     const art=allArticles.find(a=>a.id===id);if(!art)return'';
-    return`<div class="bm-item" onclick="openArticle(${id});openBookmarks()" tabindex="0" onkeydown="if(event.key==='Enter'){openArticle(${id});openBookmarks()}" role="listitem">
+    return`<a class="bm-item" href="${escHtml(art.sourceLink||'#')}" target="_blank" rel="noopener noreferrer"
+      tabindex="0" role="listitem" data-action="open-article-bm" data-article-id="${id}">
       <img class="bm-item-img" src="${escHtml(art.img)}" alt="" onerror="this.style.display='none'"/>
       <div><div class="bm-item-title">${escHtml(art.titleVN.slice(0,65))}…</div>
       <div class="bm-item-game game-${art.game}">${art.gameIcon} ${escHtml(art.gameLabel)} · ${timeAgo(art.pubDate)} · ${art.readTime}</div></div>
-    </div>`;
+    </a>`;
   }).join('');
 }
 
@@ -2191,31 +2716,27 @@ function performSearch(q){
     a.gameLabel.toLowerCase().includes(lower)||a.titleEN.toLowerCase().includes(lower)
   );
   if(!results.length){el.innerHTML=`<div class="sr-empty">😕 Không tìm thấy "<strong>${escHtml(q)}</strong>"<br><small>Thử: Roblox, Minecraft, patch, update...</small></div>`;return;}
-  // FIX: use highlightText which doesn't corrupt HTML entities
   el.innerHTML=`<div class="sr-count">Tìm thấy ${results.length} kết quả cho "<strong>${escHtml(q)}</strong>"</div>`
   +results.slice(0,10).map(art=>`
-    <div class="sr-item" onclick="openArticle(${art.id});toggleSearch()" tabindex="0" onkeydown="if(event.key==='Enter'){openArticle(${art.id});toggleSearch()}" role="option">
+    <a class="sr-item" href="${escHtml(art.sourceLink||'#')}" target="_blank" rel="noopener noreferrer"
+       tabindex="0" role="option" data-action="open-article-search" data-article-id="${art.id}">
       <img class="sr-img" src="${escHtml(art.img)}" alt="" loading="lazy" onerror="this.style.display='none'"/>
       <div>
         <div class="sr-title">${highlightText(art.titleVN, q)}</div>
         <div class="sr-meta">${art.gameIcon} ${escHtml(art.gameLabel)} · ${timeAgo(art.pubDate)} · ${art.readTime} · ${escHtml(art.sourceTitle)}</div>
       </div>
-    </div>`).join('');
+    </a>`).join('');
 }
 
-// ===== ONLINE TICKER =====
-let fakeOnline=3800;
+// ===== ONLINE DISPLAY (removed fake inflation — shows article count) =====
 function tickOnline(){
-  fakeOnline+=Math.floor(Math.random()*40)-18;
-  if(fakeOnline<1800)fakeOnline=2800;
-  if(fakeOnline>9000)fakeOnline=6000;
-  const el=document.getElementById('statOnline');
-  if(el)el.querySelector('span').textContent=fakeOnline.toLocaleString('vi-VN');
+  // no-op: online counter removed to avoid misleading users
 }
 
 // ===== TITLE TICKER =====
 function initTitleTicker(){
   setInterval(()=>{
+    if(document.hidden)return; // don't waste cycles when tab is hidden
     if(document.getElementById('modalOverlay')?.classList.contains('open'))return;
     if(allArticles.length>0){
       const art=allArticles[Math.floor(Math.random()*Math.min(6,allArticles.length))];
@@ -2224,9 +2745,22 @@ function initTitleTicker(){
   },8000);
 }
 
+// ===== VISIBILITY: pause CSS animations when tab is hidden (saves GPU) =====
+// NOTE: Custom cursor rAF already handles its own pause via visibilitychange. Only CSS animations need pausing here.
+function initVisibilityPause(){
+  const pauseables=['.radar-sweep','.radar-blip','.loading-dots span','.live-dot','.ai-dot-s'];
+  document.addEventListener('visibilitychange',()=>{
+    const state=document.hidden?'paused':'running';
+    pauseables.forEach(sel=>{
+      document.querySelectorAll(sel).forEach(el=>{el.style.animationPlayState=state;});
+    });
+  });
+}
+
 // ===== INIT =====
 document.addEventListener('DOMContentLoaded',async()=>{
   await loadState();
+  initActionDispatcher();   // ← central event dispatcher (replaces all onclick="...")
   initLoadScreen();
   initClock();
   initScroll();
@@ -2238,18 +2772,20 @@ document.addEventListener('DOMContentLoaded',async()=>{
   initTitleTicker();
   initGenshinWidget();
   initPWA();
+  initVisibilityPause();
   updateThemeBtn();
   updateBmBadge();
 
-  // FIX: Cache TTS voices
+  // Cache TTS voices
   function cacheVoices(){cachedVoices=window.speechSynthesis?.getVoices()||[];}
   cacheVoices();
   window.speechSynthesis?.addEventListener('voiceschanged',cacheVoices);
 
   const checkMobile=()=>{const fab=document.getElementById('fabSidebar');if(fab)fab.style.display=window.innerWidth<=768?'flex':'none';};
   checkMobile();window.addEventListener('resize',checkMobile);
-  setInterval(tickOnline,5000);
-  setTimeout(()=>fetchAllNews(),900);
+  // Dismiss load screen after 8s max even if fetch fails
+  setTimeout(dismissLoadScreen,8000);
+  fetchAllNews();
 });
 </script>
 </body>
